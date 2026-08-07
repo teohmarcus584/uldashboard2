@@ -44,7 +44,6 @@
         }
         .refresh-icon .badge-dot.active { display: block; }
         .refresh-icon .badge-dot.loading { background: #f59e0b; animation: pulse-dot 1s ease-in-out infinite; }
-        .refresh-icon .badge-dot.cached { background: #3b82f6; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         
         .store-selector-btn {
@@ -170,10 +169,7 @@
             display: inline-block;
         }
         .data-freshness.fresh { background: #d1fae5; color: #065f46; }
-        .data-freshness.cached { background: #dbeafe; color: #1e4668; }
         .data-freshness.loading { background: #fef3c7; color: #92400e; animation: pulse-dot 1s ease-in-out infinite; }
-        .data-freshness.priority { background: #dbeafe; color: #1e4668; animation: pulse-dot 0.8s ease-in-out infinite; }
-        .data-freshness.updating { background: #fef3c7; color: #92400e; animation: pulse-dot 1s ease-in-out infinite; }
         .date-range-display {
             font-size: 0.8rem;
             color: #4a627a;
@@ -184,12 +180,6 @@
             margin-top: 4px;
         }
         .date-range-display span { font-weight: 700; color: #1a2c42; }
-        .cache-info {
-            font-size: 0.65rem;
-            color: #6c86a3;
-            margin-left: 8px;
-            opacity: 0.7;
-        }
     </style>
 </head>
 <body>
@@ -379,7 +369,6 @@
 const SUPABASE_URL = "https://zhtfjvqmxbzeuukcinky.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable__pnqMq2EqdelKoPdT4ELqw_Ds2u8HkI";
 
-// ✅ Correct Supabase client creation
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 console.log('✅ Dashboard using Supabase');
@@ -398,7 +387,7 @@ let trendChart = null;
 let lastChartResponseData = null;
 let isDataLoaded = false;
 let refreshInProgress = false;
-let backgroundLoadInProgress = false;
+let totalTransactionCount = 0;
 
 // ----- Helper functions -----
 function getTodayYMD() {
@@ -438,10 +427,10 @@ function isTodayDate(ymd) { return ymd === TODAY_YMD; }
 
 function escapeHtml(s) { 
     if (!s) return ''; 
-    return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); 
+    return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : '');
 }
 
-// ----- Fetch from Supabase -----
+// ----- Fetch from Supabase (NO LIMIT - fetch all) -----
 async function fetchReceipts(store, from, to) {
     try {
         let query = supabaseClient
@@ -462,8 +451,11 @@ async function fetchReceipts(store, from, to) {
             query = query.lte('timestamp', toDate.toISOString());
         }
         
+        // Remove any limit - fetch ALL rows
         const { data, error } = await query;
         if (error) throw error;
+        
+        console.log(`📊 Fetched ${data ? data.length : 0} receipts`);
         return data || [];
     } catch (err) {
         console.error('fetchReceipts error:', err);
@@ -516,21 +508,6 @@ async function loadProductCategoryMap(store) {
     } catch (err) {
         return {};
     }
-}
-
-// ----- Filter data by date range -----
-function filterDataByDateRange(data, from, to) {
-    if (!data || !data.length) return [];
-    
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
-    
-    return data.filter(item => {
-        if (!item.timestamp) return false;
-        const itemDate = new Date(item.timestamp);
-        return itemDate >= fromDate && itemDate <= toDate;
-    });
 }
 
 // ----- Build product breakdown from receipts -----
@@ -747,6 +724,7 @@ function updateUI(data, receipts) {
         if (!products.length) { 
             prodDiv.innerHTML = '<div>No product sales</div>'; 
         } else {
+            // Sort by revenue for initial display
             const allProducts = [...products].sort((a,b) => (b.totalRevenue || 0) - (a.totalRevenue || 0));
             let h = '<table class="mini-table"><thead><tr><th>Product</th><th>Category</th><th>Qty</th><th>Paid</th><th>Free</th><th>Revenue (RM)</th></tr></thead><tbody>';
             let totalRev = 0, totalQ = 0, totalPaid = 0, totalFree = 0;
@@ -796,9 +774,10 @@ async function loadData(store, from, to, forceRefresh = false) {
         document.getElementById('dataFreshness').textContent = '⏳ Loading data...';
         document.getElementById('cacheBadge').className = 'badge-dot loading';
         
-        // Fetch receipts
+        // Fetch receipts (NO LIMIT)
         const receipts = await fetchReceipts(store, from, to);
         console.log(`📊 Loaded ${receipts.length} receipts for ${store}`);
+        totalTransactionCount = receipts.length;
         
         // Fetch employees
         if (allEmployeesList.length === 0) {
@@ -819,7 +798,7 @@ async function loadData(store, from, to, forceRefresh = false) {
             totalSales: receipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
             transactionCount: receipts.length,
             totalItems: receipts.reduce((sum, r) => {
-                if (r.items) {
+                if (r.items && Array.isArray(r.items)) {
                     return sum + r.items.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0);
                 }
                 return sum + (parseInt(r.quantity) || 0);
@@ -881,7 +860,7 @@ async function loadData(store, from, to, forceRefresh = false) {
         
         // Update freshness indicator
         document.getElementById('dataFreshness').className = 'data-freshness fresh';
-        document.getElementById('dataFreshness').textContent = `✅ Data loaded (${new Date().toLocaleTimeString()})`;
+        document.getElementById('dataFreshness').textContent = `✅ ${receipts.length} transactions loaded (${new Date().toLocaleTimeString()})`;
         document.getElementById('cacheBadge').className = 'badge-dot active';
         
         // Update employee dropdowns
@@ -1014,15 +993,24 @@ function updateArrowDisabledState() {
     const leftArrowBtn = document.getElementById('leftArrowBtn');
     const rightArrowBtn = document.getElementById('rightArrowBtn');
     if (!leftArrowBtn || !rightArrowBtn) return;
+    
     if (currentPresetType === 'custom') { 
         rightArrowBtn.disabled = true; 
         leftArrowBtn.disabled = false;
         return; 
     }
+    
     let nextRange = getAdjacentRange('next');
     let prevRange = getAdjacentRange('prev');
+    
+    // For "Today", disable left arrow (no previous day before today)
+    if (currentPresetType === 'day' && isTodayDate(currentFrom)) {
+        leftArrowBtn.disabled = true;
+    } else {
+        leftArrowBtn.disabled = !prevRange;
+    }
+    
     rightArrowBtn.disabled = !nextRange || isFutureDate(nextRange.from);
-    leftArrowBtn.disabled = !prevRange;
 }
 
 function getAdjacentRange(dir) {
@@ -2096,13 +2084,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('generateIrsPdfBtn').addEventListener('click', generateIrsReceiptPDF);
-    
-    // Auto-refresh every 5 minutes
-    setInterval(() => {
-        if (!refreshInProgress) {
-            loadData(currentStore, currentFrom, currentTo);
-        }
-    }, 5 * 60 * 1000);
 });
 
 console.log('✅ Dashboard initialized with Supabase');
