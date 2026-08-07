@@ -1712,6 +1712,20 @@ function buildIrsReceiptsHtml(receipts, storeName, fromDate, toDate, employeeFil
             <div style="margin-top:12px; font-size:11px;">Generated on ${new Date().toLocaleString()}</div>
         </div>
         ${receipts.map((rec, idx) => {
+            // ====== FIX: Parse items if it's a string ======
+            let itemsList = rec.items;
+            if (typeof itemsList === 'string') {
+                try {
+                    itemsList = JSON.parse(itemsList);
+                } catch(e) {
+                    itemsList = [];
+                }
+            }
+            if (!itemsList || !Array.isArray(itemsList)) {
+                itemsList = [];
+            }
+            // ====== END FIX ======
+            
             const isRefund = rec.total < 0;
             const invoiceId = rec.invoice_no || rec.transaction_id || `IRS-${idx}`;
             const dateTime = rec.timestamp
@@ -1720,7 +1734,6 @@ function buildIrsReceiptsHtml(receipts, storeName, fromDate, toDate, employeeFil
             const employee = rec.employee_name || rec.sales_person_name || '—';
             const netTotal = parseFloat(rec.total) || 0;
             const totalAmount = Math.abs(netTotal).toFixed(2);
-            const itemsList = rec.items && rec.items.length ? rec.items : (rec.item_name ? [{ item_name: rec.item_name, quantity: rec.quantity || 1, total: rec.total, price: rec.price }] : []);
             
             let itemSubtotal = 0;
             if (itemsList.length) {
@@ -1752,10 +1765,10 @@ function buildIrsReceiptsHtml(receipts, storeName, fromDate, toDate, employeeFil
                         const price = it.price || 0;
                         const subtotal = it.total || (qty * price);
                         return `<tr>
-                            <td>${escapeHtml(it.item_name || it.name || 'Item')}</td>
-                            <td>${qty}X${price.toFixed(2)}</td>
-                            <td>${price.toFixed(2)}</td>
-                            <td>${subtotal.toFixed(2)}</td>
+                            <td>${escapeHtml(it.name || it.item_name || 'Item')}</td>
+                            <td>${qty}X${parseFloat(price).toFixed(2)}</td>
+                            <td>${parseFloat(price).toFixed(2)}</td>
+                            <td>${parseFloat(subtotal).toFixed(2)}</td>
                         </tr>`;
                     }).join('')}
                     ${showDiscount ? `<tr class="discount-row"><td colspan="3"><strong>🌟 Customer Points Discount</strong></td><td><strong>-RM ${discountAmount.toFixed(2)}</strong></td></tr>` : ''}
@@ -1802,18 +1815,41 @@ async function generateIrsReceiptPDF() {
     loadingDiv.innerText = `Generating IRS report...`;
     document.body.appendChild(loadingDiv);
     try {
-       let receipts = await fetchIrsReceipts(selectedStore, irsFromDate, irsToDate);
+        // ====== FETCH FROM IRS TABLE ======
+        let query = supabaseClient
+            .from('irs_reporting')
+            .select('*')
+            .order('timestamp', { ascending: false });
         
-       
+        if (selectedStore && selectedStore !== 'all') {
+            query = query.eq('store', selectedStore);
+        }
+        
+        if (irsFromDate) {
+            const fromDate = new Date(irsFromDate + 'T00:00:00+08:00');
+            query = query.gte('timestamp', fromDate.toISOString());
+        }
+        if (irsToDate) {
+            const toDate = new Date(irsToDate + 'T23:59:59+08:00');
+            query = query.lte('timestamp', toDate.toISOString());
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        let receipts = data || [];
+        // ====== END OF IRS FETCH ======
+        
+        // NO payment method filter needed - IRS table is already filtered
         
         if (selectedEmployeeName) {
             receipts = receipts.filter(r => 
-                r.sales_person_name === selectedEmployeeName || r.employee_name === selectedEmployeeName
+                r.employee_name === selectedEmployeeName || r.sales_person_name === selectedEmployeeName
             );
         }
         
         if (receipts.length === 0) {
-            throw new Error("No Card/Alipay receipts found for the selected criteria.");
+            throw new Error("No IRS receipts found for the selected criteria.");
         }
         
         receipts.sort((a,b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
