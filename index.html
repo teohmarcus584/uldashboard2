@@ -1802,12 +1802,9 @@ async function generateIrsReceiptPDF() {
     loadingDiv.innerText = `Generating IRS report...`;
     document.body.appendChild(loadingDiv);
     try {
-        let receipts = await fetchReceipts(selectedStore, irsFromDate, irsToDate);
+       let receipts = await fetchIrsReceipts(selectedStore, irsFromDate, irsToDate);
         
-        receipts = receipts.filter(r => {
-            const method = (r.payment_method || '').toLowerCase();
-            return method === 'card' || method === 'credit_card' || method === 'alipay';
-        });
+       
         
         if (selectedEmployeeName) {
             receipts = receipts.filter(r => 
@@ -2004,7 +2001,37 @@ async function generateCSVReport() {
         loadingMsg.remove();
     }
 }
-
+// Add this new function
+async function fetchIrsReceipts(store, from, to) {
+    try {
+        let query = supabaseClient
+            .from('irs_reporting')  // ← use the IRS table
+            .select('*')
+            .order('timestamp', { ascending: false });
+        
+        if (store && store !== 'all') {
+            query = query.eq('store', store);
+        }
+        
+        if (from) {
+            const fromDate = new Date(from + 'T00:00:00+08:00');
+            query = query.gte('timestamp', fromDate.toISOString());
+        }
+        if (to) {
+            const toDate = new Date(to + 'T23:59:59+08:00');
+            query = query.lte('timestamp', toDate.toISOString());
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        console.log(`📊 Fetched ${data ? data.length : 0} IRS receipts`);
+        return data || [];
+    } catch (err) {
+        console.error('fetchIrsReceipts error:', err);
+        return [];
+    }
+}
 async function downloadFullProductList() {
     if (!currentFrom || !currentTo) {
         showError("Please select a date range first");
