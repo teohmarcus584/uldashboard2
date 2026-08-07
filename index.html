@@ -180,6 +180,91 @@
             margin-top: 4px;
         }
         .date-range-display span { font-weight: 700; color: #1a2c42; }
+
+        /* Monthly breakdown styles */
+        .monthly-breakdown {
+            display: none;
+            background: white;
+            border-radius: 32px;
+            padding: 20px 18px;
+            margin-bottom: 28px;
+            border: 1px solid #eef2f8;
+        }
+        .monthly-breakdown.visible { display: block; }
+        .monthly-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .month-card {
+            background: #f8fafd;
+            border-radius: 20px;
+            padding: 14px 12px;
+            text-align: center;
+            border: 1px solid #eef2f8;
+            transition: 0.2s;
+        }
+        .month-card:hover:not(.month-empty) {
+            background: #eef2ff;
+            border-color: #2b6e9e;
+            transform: translateY(-2px);
+        }
+        .month-card.month-empty {
+            opacity: 0.5;
+            cursor: default;
+        }
+        .month-card.month-empty:hover {
+            transform: none !important;
+            background: #f8fafd !important;
+            border-color: #eef2f8 !important;
+        }
+        .month-name {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #4a627a;
+            margin-bottom: 6px;
+        }
+        .month-total {
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: #1a2c42;
+        }
+        .month-total.small {
+            font-size: 0.9rem;
+        }
+        .month-total .currency-symbol {
+            font-size: 0.7rem;
+            color: #6c86a3;
+        }
+        .monthly-breakdown .section-title {
+            margin-bottom: 8px;
+        }
+        .monthly-subtitle {
+            font-size: 0.8rem;
+            color: #6c86a3;
+            margin-bottom: 12px;
+        }
+        .month-highlight {
+            background: #d1fae5;
+            border-color: #10b981;
+        }
+        .month-highlight .month-total { color: #065f46; }
+        .loading-month {
+            background: #f8fafd;
+            border-radius: 20px;
+            padding: 14px 12px;
+            text-align: center;
+            border: 1px solid #eef2f8;
+            opacity: 0.6;
+        }
+        .loading-month .skeleton-text {
+            height: 20px;
+            background: #e9edf2;
+            border-radius: 4px;
+            margin: 4px 0;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -206,6 +291,19 @@
         <span class="data-freshness" id="dataFreshness">Loading...</span>
         <span class="date-range-display">📊 Showing: <span id="displayDateRange">Today</span></span>
     </div>
+
+    <!-- Monthly Breakdown (visible for year views) -->
+    <div class="monthly-breakdown" id="monthlyBreakdown">
+        <div class="section-title" style="border-left: 5px solid #10b981; padding-left: 14px;">📆 Monthly Sales Breakdown</div>
+        <div class="monthly-subtitle">* Click a month to view details</div>
+        <div class="monthly-grid" id="monthlyGrid">
+            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
+            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
+            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
+            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
+        </div>
+    </div>
+
     <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-label">TOTAL SALES (RM)</div><div class="kpi-value" id="totalSales"><div class="skeleton kpi-skeleton"></div></div></div>
         <div class="kpi-card"><div class="kpi-label">TRANSACTIONS</div><div class="kpi-value" id="txnCount"><div class="skeleton kpi-skeleton"></div></div></div>
@@ -430,9 +528,55 @@ function escapeHtml(s) {
     return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : '');
 }
 
-// ----- Fetch from Supabase (NO LIMIT - fetch all) -----
-async function fetchReceipts(store, from, to) {
+// ----- Fetch from Supabase with month-by-month for yearly views -----
+async function fetchReceipts(store, from, to, isYearly = false) {
     try {
+        // If yearly view, fetch month by month to avoid 1000 row limit
+        if (isYearly) {
+            console.log('📆 Fetching yearly data month by month...');
+            const allData = [];
+            const fromDate = new Date(from + 'T00:00:00+08:00');
+            const toDate = new Date(to + 'T23:59:59+08:00');
+            
+            // Loop through each month
+            let currentDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+            while (currentDate <= toDate) {
+                const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                
+                const startStr = formatYMD(monthStart);
+                const endStr = formatYMD(monthEnd);
+                
+                let query = supabaseClient
+                    .from('transactions')
+                    .select('*')
+                    .order('timestamp', { ascending: false });
+                
+                if (store && store !== 'all') {
+                    query = query.eq('store', store);
+                }
+                
+                const startISO = new Date(startStr + 'T00:00:00+08:00').toISOString();
+                const endISO = new Date(endStr + 'T23:59:59+08:00').toISOString();
+                query = query.gte('timestamp', startISO).lte('timestamp', endISO);
+                
+                const { data, error } = await query;
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    console.log(`  📊 ${monthStart.toLocaleString('default', { month: 'long' })}: ${data.length} transactions`);
+                    allData.push(...data);
+                }
+                
+                // Move to next month
+                currentDate.setMonth(currentDate.getMonth() + 1);
+            }
+            
+            console.log(`📊 Total fetched: ${allData.length} receipts across all months`);
+            return allData;
+        }
+        
+        // Regular query for non-yearly views
         let query = supabaseClient
             .from('transactions')
             .select('*')
@@ -451,7 +595,6 @@ async function fetchReceipts(store, from, to) {
             query = query.lte('timestamp', toDate.toISOString());
         }
         
-        // Remove any limit - fetch ALL rows
         const { data, error } = await query;
         if (error) throw error;
         
@@ -620,6 +763,108 @@ function renderChartWithData(chartData) {
     }, 50);
 }
 
+// ----- Render monthly breakdown -----
+function renderMonthlyBreakdown(receipts) {
+    const monthlyBreakdown = document.getElementById('monthlyBreakdown');
+    const monthlyGrid = document.getElementById('monthlyGrid');
+    
+    if (!monthlyBreakdown || !monthlyGrid) return;
+    
+    // Only show for year views
+    if (currentPresetType === 'year' || currentPresetType === 'lastyear') {
+        monthlyBreakdown.classList.add('visible');
+    } else {
+        monthlyBreakdown.classList.remove('visible');
+        return;
+    }
+    
+    // Calculate monthly totals from receipts
+    const monthlyTotals = {};
+    const monthlyTxns = {};
+    
+    receipts.forEach(rec => {
+        if (!rec.timestamp) return;
+        const date = new Date(rec.timestamp);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        const total = parseFloat(rec.total) || 0;
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + total;
+        monthlyTxns[monthKey] = (monthlyTxns[monthKey] || 0) + 1;
+    });
+    
+    // Get the year from currentFrom
+    const year = parseInt(currentFrom.split('-')[0]);
+    
+    // Generate ALL 12 months for the year
+    const allMonths = [];
+    for (let m = 1; m <= 12; m++) {
+        const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+        allMonths.push(monthKey);
+    }
+    
+    // Find max for highlighting
+    let maxTotal = 0;
+    Object.values(monthlyTotals).forEach(v => { if (v > maxTotal) maxTotal = v; });
+    
+    let html = '';
+    allMonths.forEach(monthKey => {
+        const total = monthlyTotals[monthKey] || 0;
+        const txnCount = monthlyTxns[monthKey] || 0;
+        const [yearStr, monthStr] = monthKey.split('-');
+        const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
+        const monthName = date.toLocaleString('default', { month: 'short' });
+        const isHighlight = total === maxTotal && maxTotal > 0;
+        const hasData = total > 0;
+        
+        html += `
+            <div class="month-card ${isHighlight ? 'month-highlight' : ''} ${!hasData ? 'month-empty' : ''}" 
+                 data-month="${monthKey}" 
+                 style="cursor:${hasData ? 'pointer' : 'default'};">
+                <div class="month-name">${monthName} ${yearStr}</div>
+                <div class="month-total ${total < 1000 && total > 0 ? 'small' : ''}" style="${total === 0 ? 'color:#aaa;' : ''}">
+                    ${total === 0 ? '—' : `<span class="currency-symbol">RM</span> ${total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`}
+                </div>
+                <div style="font-size:0.65rem; color:#6c86a3; margin-top:4px;">${total === 0 ? 'No sales' : `${txnCount} transactions`}</div>
+            </div>
+        `;
+    });
+    
+    monthlyGrid.innerHTML = html;
+    
+    // Add click handlers to month cards (only for months with data)
+    document.querySelectorAll('.month-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const monthKey = this.dataset.month;
+            if (!monthKey) return;
+            
+            // Check if this month has data
+            const total = monthlyTotals[monthKey] || 0;
+            if (total === 0) {
+                showError('No sales data for this month');
+                return;
+            }
+            
+            const [year, month] = monthKey.split('-');
+            const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+            const endDate = new Date(parseInt(year), parseInt(month), 0);
+            
+            const fromStr = formatYMD(startDate);
+            const toStr = formatYMD(endDate);
+            
+            // Apply the month range
+            currentPresetType = 'custom';
+            currentFrom = fromStr;
+            currentTo = toStr;
+            updateDateLabel();
+            loadData(currentStore, currentFrom, currentTo);
+            updateArrowDisabledState();
+            
+            // Close any open modals
+            closeDateModal();
+        });
+    });
+}
+
 // ----- Update UI -----
 function updateUI(data, receipts) {
     if (!data) return;
@@ -757,6 +1002,9 @@ function updateUI(data, receipts) {
         }
     }
     
+    // Render monthly breakdown
+    renderMonthlyBreakdown(receipts || []);
+    
     renderChartWithData(chart);
 }
 
@@ -774,8 +1022,11 @@ async function loadData(store, from, to, forceRefresh = false) {
         document.getElementById('dataFreshness').textContent = '⏳ Loading data...';
         document.getElementById('cacheBadge').className = 'badge-dot loading';
         
-        // Fetch receipts (NO LIMIT)
-        const receipts = await fetchReceipts(store, from, to);
+        // Check if this is a yearly view
+        const isYearly = (currentPresetType === 'year' || currentPresetType === 'lastyear');
+        
+        // Fetch receipts (month-by-month for yearly views)
+        const receipts = await fetchReceipts(store, from, to, isYearly);
         console.log(`📊 Loaded ${receipts.length} receipts for ${store}`);
         totalTransactionCount = receipts.length;
         
