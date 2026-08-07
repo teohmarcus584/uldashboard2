@@ -44,6 +44,7 @@
         }
         .refresh-icon .badge-dot.active { display: block; }
         .refresh-icon .badge-dot.loading { background: #f59e0b; animation: pulse-dot 1s ease-in-out infinite; }
+        .refresh-icon .badge-dot.cached { background: #3b82f6; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         
         .store-selector-btn {
@@ -169,7 +170,10 @@
             display: inline-block;
         }
         .data-freshness.fresh { background: #d1fae5; color: #065f46; }
+        .data-freshness.cached { background: #dbeafe; color: #1e4668; }
         .data-freshness.loading { background: #fef3c7; color: #92400e; animation: pulse-dot 1s ease-in-out infinite; }
+        .data-freshness.priority { background: #dbeafe; color: #1e4668; animation: pulse-dot 0.8s ease-in-out infinite; }
+        .data-freshness.updating { background: #fef3c7; color: #92400e; animation: pulse-dot 1s ease-in-out infinite; }
         .date-range-display {
             font-size: 0.8rem;
             color: #4a627a;
@@ -180,90 +184,11 @@
             margin-top: 4px;
         }
         .date-range-display span { font-weight: 700; color: #1a2c42; }
-
-        /* Monthly breakdown styles */
-        .monthly-breakdown {
-            display: none;
-            background: white;
-            border-radius: 32px;
-            padding: 20px 18px;
-            margin-bottom: 28px;
-            border: 1px solid #eef2f8;
-        }
-        .monthly-breakdown.visible { display: block; }
-        .monthly-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 12px;
-            margin-top: 12px;
-        }
-        .month-card {
-            background: #f8fafd;
-            border-radius: 20px;
-            padding: 14px 12px;
-            text-align: center;
-            border: 1px solid #eef2f8;
-            transition: 0.2s;
-        }
-        .month-card:hover:not(.month-empty) {
-            background: #eef2ff;
-            border-color: #2b6e9e;
-            transform: translateY(-2px);
-        }
-        .month-card.month-empty {
-            opacity: 0.5;
-            cursor: default;
-        }
-        .month-card.month-empty:hover {
-            transform: none !important;
-            background: #f8fafd !important;
-            border-color: #eef2f8 !important;
-        }
-        .month-name {
-            font-weight: 700;
-            font-size: 0.85rem;
-            color: #4a627a;
-            margin-bottom: 6px;
-        }
-        .month-total {
-            font-weight: 800;
-            font-size: 1.2rem;
-            color: #1a2c42;
-        }
-        .month-total.small {
-            font-size: 0.9rem;
-        }
-        .month-total .currency-symbol {
-            font-size: 0.7rem;
+        .cache-info {
+            font-size: 0.65rem;
             color: #6c86a3;
-        }
-        .monthly-breakdown .section-title {
-            margin-bottom: 8px;
-        }
-        .monthly-subtitle {
-            font-size: 0.8rem;
-            color: #6c86a3;
-            margin-bottom: 12px;
-        }
-        .month-highlight {
-            background: #d1fae5;
-            border-color: #10b981;
-        }
-        .month-highlight .month-total { color: #065f46; }
-        .loading-month {
-            background: #f8fafd;
-            border-radius: 20px;
-            padding: 14px 12px;
-            text-align: center;
-            border: 1px solid #eef2f8;
-            opacity: 0.6;
-        }
-        .loading-month .skeleton-text {
-            height: 20px;
-            background: #e9edf2;
-            border-radius: 4px;
-            margin: 4px 0;
-            animation: pulse 1.5s ease-in-out infinite;
+            margin-left: 8px;
+            opacity: 0.7;
         }
     </style>
 </head>
@@ -274,7 +199,7 @@
         <span class="badge-dot" id="cacheBadge"></span>
     </button>
     <div class="date-control">
-        <button class="arrow-btn" id="leftArrowBtn" disabled>←</button>
+        <button class="arrow-btn" id="leftArrowBtn">←</button>
         <button class="date-trigger-btn" id="dateTriggerBtn">📅 <span class="date-range-label" id="dateRangeLabel">Today</span></button>
         <button class="arrow-btn" id="rightArrowBtn" disabled>→</button>
     </div>
@@ -291,19 +216,6 @@
         <span class="data-freshness" id="dataFreshness">Loading...</span>
         <span class="date-range-display">📊 Showing: <span id="displayDateRange">Today</span></span>
     </div>
-
-    <!-- Monthly Breakdown (visible for year views) -->
-    <div class="monthly-breakdown" id="monthlyBreakdown">
-        <div class="section-title" style="border-left: 5px solid #10b981; padding-left: 14px;">📆 Monthly Sales Breakdown</div>
-        <div class="monthly-subtitle">* Click a month to view details</div>
-        <div class="monthly-grid" id="monthlyGrid">
-            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
-            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
-            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
-            <div class="loading-month"><div class="skeleton-text"></div><div class="skeleton-text" style="width:60%;"></div></div>
-        </div>
-    </div>
-
     <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-label">TOTAL SALES (RM)</div><div class="kpi-value" id="totalSales"><div class="skeleton kpi-skeleton"></div></div></div>
         <div class="kpi-card"><div class="kpi-label">TRANSACTIONS</div><div class="kpi-value" id="txnCount"><div class="skeleton kpi-skeleton"></div></div></div>
@@ -468,7 +380,6 @@ const SUPABASE_URL = "https://zhtfjvqmxbzeuukcinky.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable__pnqMq2EqdelKoPdT4ELqw_Ds2u8HkI";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 console.log('✅ Dashboard using Supabase');
 
 // ==================== STATE ====================
@@ -485,7 +396,6 @@ let trendChart = null;
 let lastChartResponseData = null;
 let isDataLoaded = false;
 let refreshInProgress = false;
-let totalTransactionCount = 0;
 
 // ----- Helper functions -----
 function getTodayYMD() {
@@ -528,55 +438,9 @@ function escapeHtml(s) {
     return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : '');
 }
 
-// ----- Fetch from Supabase with month-by-month for yearly views -----
-async function fetchReceipts(store, from, to, isYearly = false) {
+// ----- Fetch from Supabase -----
+async function fetchReceipts(store, from, to) {
     try {
-        // If yearly view, fetch month by month to avoid 1000 row limit
-        if (isYearly) {
-            console.log('📆 Fetching yearly data month by month...');
-            const allData = [];
-            const fromDate = new Date(from + 'T00:00:00+08:00');
-            const toDate = new Date(to + 'T23:59:59+08:00');
-            
-            // Loop through each month
-            let currentDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
-            while (currentDate <= toDate) {
-                const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-                const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-                
-                const startStr = formatYMD(monthStart);
-                const endStr = formatYMD(monthEnd);
-                
-                let query = supabaseClient
-                    .from('transactions')
-                    .select('*')
-                    .order('timestamp', { ascending: false });
-                
-                if (store && store !== 'all') {
-                    query = query.eq('store', store);
-                }
-                
-                const startISO = new Date(startStr + 'T00:00:00+08:00').toISOString();
-                const endISO = new Date(endStr + 'T23:59:59+08:00').toISOString();
-                query = query.gte('timestamp', startISO).lte('timestamp', endISO);
-                
-                const { data, error } = await query;
-                if (error) throw error;
-                
-                if (data && data.length > 0) {
-                    console.log(`  📊 ${monthStart.toLocaleString('default', { month: 'long' })}: ${data.length} transactions`);
-                    allData.push(...data);
-                }
-                
-                // Move to next month
-                currentDate.setMonth(currentDate.getMonth() + 1);
-            }
-            
-            console.log(`📊 Total fetched: ${allData.length} receipts across all months`);
-            return allData;
-        }
-        
-        // Regular query for non-yearly views
         let query = supabaseClient
             .from('transactions')
             .select('*')
@@ -597,8 +461,6 @@ async function fetchReceipts(store, from, to, isYearly = false) {
         
         const { data, error } = await query;
         if (error) throw error;
-        
-        console.log(`📊 Fetched ${data ? data.length : 0} receipts`);
         return data || [];
     } catch (err) {
         console.error('fetchReceipts error:', err);
@@ -639,7 +501,6 @@ async function fetchProducts(store) {
     }
 }
 
-// ----- Build product category map -----
 async function loadProductCategoryMap(store) {
     try {
         const products = await fetchProducts(store);
@@ -653,7 +514,6 @@ async function loadProductCategoryMap(store) {
     }
 }
 
-// ----- Build product breakdown from receipts -----
 function buildProductBreakdownFromReceipts(receipts, categoryMap) {
     const productMap = new Map();
     let totalSalesFromProducts = 0;
@@ -763,108 +623,6 @@ function renderChartWithData(chartData) {
     }, 50);
 }
 
-// ----- Render monthly breakdown -----
-function renderMonthlyBreakdown(receipts) {
-    const monthlyBreakdown = document.getElementById('monthlyBreakdown');
-    const monthlyGrid = document.getElementById('monthlyGrid');
-    
-    if (!monthlyBreakdown || !monthlyGrid) return;
-    
-    // Only show for year views
-    if (currentPresetType === 'year' || currentPresetType === 'lastyear') {
-        monthlyBreakdown.classList.add('visible');
-    } else {
-        monthlyBreakdown.classList.remove('visible');
-        return;
-    }
-    
-    // Calculate monthly totals from receipts
-    const monthlyTotals = {};
-    const monthlyTxns = {};
-    
-    receipts.forEach(rec => {
-        if (!rec.timestamp) return;
-        const date = new Date(rec.timestamp);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        
-        const total = parseFloat(rec.total) || 0;
-        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + total;
-        monthlyTxns[monthKey] = (monthlyTxns[monthKey] || 0) + 1;
-    });
-    
-    // Get the year from currentFrom
-    const year = parseInt(currentFrom.split('-')[0]);
-    
-    // Generate ALL 12 months for the year
-    const allMonths = [];
-    for (let m = 1; m <= 12; m++) {
-        const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-        allMonths.push(monthKey);
-    }
-    
-    // Find max for highlighting
-    let maxTotal = 0;
-    Object.values(monthlyTotals).forEach(v => { if (v > maxTotal) maxTotal = v; });
-    
-    let html = '';
-    allMonths.forEach(monthKey => {
-        const total = monthlyTotals[monthKey] || 0;
-        const txnCount = monthlyTxns[monthKey] || 0;
-        const [yearStr, monthStr] = monthKey.split('-');
-        const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
-        const monthName = date.toLocaleString('default', { month: 'short' });
-        const isHighlight = total === maxTotal && maxTotal > 0;
-        const hasData = total > 0;
-        
-        html += `
-            <div class="month-card ${isHighlight ? 'month-highlight' : ''} ${!hasData ? 'month-empty' : ''}" 
-                 data-month="${monthKey}" 
-                 style="cursor:${hasData ? 'pointer' : 'default'};">
-                <div class="month-name">${monthName} ${yearStr}</div>
-                <div class="month-total ${total < 1000 && total > 0 ? 'small' : ''}" style="${total === 0 ? 'color:#aaa;' : ''}">
-                    ${total === 0 ? '—' : `<span class="currency-symbol">RM</span> ${total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`}
-                </div>
-                <div style="font-size:0.65rem; color:#6c86a3; margin-top:4px;">${total === 0 ? 'No sales' : `${txnCount} transactions`}</div>
-            </div>
-        `;
-    });
-    
-    monthlyGrid.innerHTML = html;
-    
-    // Add click handlers to month cards (only for months with data)
-    document.querySelectorAll('.month-card').forEach(card => {
-        card.addEventListener('click', function() {
-            const monthKey = this.dataset.month;
-            if (!monthKey) return;
-            
-            // Check if this month has data
-            const total = monthlyTotals[monthKey] || 0;
-            if (total === 0) {
-                showError('No sales data for this month');
-                return;
-            }
-            
-            const [year, month] = monthKey.split('-');
-            const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            const endDate = new Date(parseInt(year), parseInt(month), 0);
-            
-            const fromStr = formatYMD(startDate);
-            const toStr = formatYMD(endDate);
-            
-            // Apply the month range
-            currentPresetType = 'custom';
-            currentFrom = fromStr;
-            currentTo = toStr;
-            updateDateLabel();
-            loadData(currentStore, currentFrom, currentTo);
-            updateArrowDisabledState();
-            
-            // Close any open modals
-            closeDateModal();
-        });
-    });
-}
-
 // ----- Update UI -----
 function updateUI(data, receipts) {
     if (!data) return;
@@ -969,7 +727,6 @@ function updateUI(data, receipts) {
         if (!products.length) { 
             prodDiv.innerHTML = '<div>No product sales</div>'; 
         } else {
-            // Sort by revenue for initial display
             const allProducts = [...products].sort((a,b) => (b.totalRevenue || 0) - (a.totalRevenue || 0));
             let h = '<table class="mini-table"><thead><tr><th>Product</th><th>Category</th><th>Qty</th><th>Paid</th><th>Free</th><th>Revenue (RM)</th></tr></thead><tbody>';
             let totalRev = 0, totalQ = 0, totalPaid = 0, totalFree = 0;
@@ -1002,9 +759,6 @@ function updateUI(data, receipts) {
         }
     }
     
-    // Render monthly breakdown
-    renderMonthlyBreakdown(receipts || []);
-    
     renderChartWithData(chart);
 }
 
@@ -1017,26 +771,18 @@ async function loadData(store, from, to, forceRefresh = false) {
     if (refreshBtn) refreshBtn.classList.add('refresh-spin');
     
     try {
-        // Show loading state
         document.getElementById('dataFreshness').className = 'data-freshness loading';
         document.getElementById('dataFreshness').textContent = '⏳ Loading data...';
         document.getElementById('cacheBadge').className = 'badge-dot loading';
         
-        // Check if this is a yearly view
-        const isYearly = (currentPresetType === 'year' || currentPresetType === 'lastyear');
-        
-        // Fetch receipts (month-by-month for yearly views)
-        const receipts = await fetchReceipts(store, from, to, isYearly);
+        const receipts = await fetchReceipts(store, from, to);
         console.log(`📊 Loaded ${receipts.length} receipts for ${store}`);
-        totalTransactionCount = receipts.length;
         
-        // Fetch employees
         if (allEmployeesList.length === 0) {
             allEmployeesList = await fetchEmployees();
             console.log(`👥 Loaded ${allEmployeesList.length} employees`);
         }
         
-        // Fetch product categories if needed
         if (Object.keys(productCategoryMap).length === 0) {
             productCategoryMap = await loadProductCategoryMap(store);
             console.log(`📦 Loaded ${Object.keys(productCategoryMap).length} product categories`);
@@ -1044,12 +790,11 @@ async function loadData(store, from, to, forceRefresh = false) {
         
         rawReceiptsData = receipts;
         
-        // Calculate sales data
         const salesData = {
             totalSales: receipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
             transactionCount: receipts.length,
             totalItems: receipts.reduce((sum, r) => {
-                if (r.items && Array.isArray(r.items)) {
+                if (r.items) {
                     return sum + r.items.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0);
                 }
                 return sum + (parseInt(r.quantity) || 0);
@@ -1073,7 +818,6 @@ async function loadData(store, from, to, forceRefresh = false) {
             refundTotal: receipts.filter(r => parseFloat(r.total) < 0).reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0)
         };
         
-        // Employee sales
         const employeeSales = {};
         receipts.forEach(r => {
             const emp = r.sales_person_name || r.employee_name || 'Unknown';
@@ -1084,7 +828,6 @@ async function loadData(store, from, to, forceRefresh = false) {
             data: Object.values(employeeSales)
         };
         
-        // Chart data
         const dailySales = {};
         receipts.forEach(r => {
             if (r.timestamp) {
@@ -1100,7 +843,6 @@ async function loadData(store, from, to, forceRefresh = false) {
             }
         };
         
-        // Update UI
         updateUI({
             sales: salesData,
             chart: chartData,
@@ -1109,12 +851,10 @@ async function loadData(store, from, to, forceRefresh = false) {
         
         isDataLoaded = true;
         
-        // Update freshness indicator
         document.getElementById('dataFreshness').className = 'data-freshness fresh';
-        document.getElementById('dataFreshness').textContent = `✅ ${receipts.length} transactions loaded (${new Date().toLocaleTimeString()})`;
+        document.getElementById('dataFreshness').textContent = `✅ Data loaded (${new Date().toLocaleTimeString()})`;
         document.getElementById('cacheBadge').className = 'badge-dot active';
         
-        // Update employee dropdowns
         populateEmployeeDropdowns();
         
         return receipts;
@@ -1128,6 +868,157 @@ async function loadData(store, from, to, forceRefresh = false) {
     } finally {
         refreshInProgress = false;
         if (refreshBtn) refreshBtn.classList.remove('refresh-spin');
+    }
+}
+
+// ----- FIXED: Date navigation functions -----
+function updateArrowDisabledState() {
+    const leftArrowBtn = document.getElementById('leftArrowBtn');
+    const rightArrowBtn = document.getElementById('rightArrowBtn');
+    if (!leftArrowBtn || !rightArrowBtn) return;
+    
+    // Custom range: only left arrow works (to go back)
+    if (currentPresetType === 'custom') { 
+        rightArrowBtn.disabled = true; 
+        leftArrowBtn.disabled = false;
+        return; 
+    }
+    
+    // Always enable left arrow (going back is always allowed)
+    leftArrowBtn.disabled = false;
+    
+    // Right arrow: disabled only if next range is in the future
+    let nextRange = getAdjacentRange('next');
+    rightArrowBtn.disabled = !nextRange || isFutureDate(nextRange.from);
+}
+
+function getAdjacentRange(dir) {
+    const delta = dir === 'next' ? 1 : -1;
+    
+    if (currentPresetType === 'day') {
+        let d = currentDayDate ? new Date(currentDayDate) : new Date();
+        let nd = new Date(d);
+        nd.setDate(d.getDate() + delta);
+        return { from: formatYMD(nd), to: formatYMD(nd) };
+    }
+    
+    if (currentPresetType === 'week') {
+        let start = parseYMD(currentFrom);
+        if (isNaN(start.getTime())) start = getWeekStart(new Date());
+        let ns = new Date(start);
+        ns.setDate(start.getDate() + delta * 7);
+        let ne = new Date(ns);
+        ne.setDate(ns.getDate() + 6);
+        return { from: formatYMD(ns), to: formatYMD(ne) };
+    }
+    
+    if (currentPresetType === 'month') {
+        let start = currentFrom ? parseYMD(currentFrom) : new Date();
+        let ns = new Date(start);
+        ns.setMonth(start.getMonth() + delta);
+        let ne = new Date(ns.getFullYear(), ns.getMonth() + 1, 0);
+        return { from: formatYMD(ns), to: formatYMD(ne) };
+    }
+    
+    if (currentPresetType === 'year') {
+        let start = currentFrom ? parseYMD(currentFrom) : new Date();
+        let ny = start.getFullYear() + delta;
+        let ns = new Date(ny, 0, 1);
+        let ne = new Date(ny, 11, 31);
+        return { from: formatYMD(ns), to: formatYMD(ne) };
+    }
+    
+    return null;
+}
+
+function shiftDateRange(dir) {
+    if (refreshInProgress) return;
+    if (currentPresetType === 'custom') { 
+        showError("Custom range cannot be shifted. Select a preset."); 
+        return; 
+    }
+    
+    const delta = dir === 'left' ? -1 : 1;
+    
+    // For right arrow (going forward), check if we're going into the future
+    if (delta === 1) { 
+        const nextRange = getAdjacentRange('next'); 
+        if (nextRange && isFutureDate(nextRange.from)) { 
+            showError("Cannot go beyond today's date."); 
+            return; 
+        } 
+    }
+    
+    if (currentPresetType === 'day') {
+        if (!currentDayDate) currentDayDate = new Date();
+        let nd = new Date(currentDayDate);
+        nd.setDate(currentDayDate.getDate() + delta);
+        const newYMD = formatYMD(nd);
+        if (delta === 1 && isFutureDate(newYMD)) { 
+            showError("No future data."); 
+            return; 
+        }
+        currentDayDate = nd;
+        currentFrom = newYMD;
+        currentTo = currentFrom;
+        updateDateLabel();
+        loadData(currentStore, currentFrom, currentTo);
+        updateArrowDisabledState();
+        return;
+    }
+    
+    if (currentPresetType === 'week') {
+        let start = parseYMD(currentFrom);
+        if (isNaN(start.getTime())) start = getWeekStart(new Date());
+        let ns = new Date(start);
+        ns.setDate(start.getDate() + delta * 7);
+        let ne = new Date(ns);
+        ne.setDate(ns.getDate() + 6);
+        const newFromStr = formatYMD(ns);
+        if (delta === 1 && isFutureDate(newFromStr)) { 
+            showError("Cannot shift week into future."); 
+            return; 
+        }
+        currentFrom = newFromStr;
+        currentTo = formatYMD(ne);
+        updateDateLabel();
+        loadData(currentStore, currentFrom, currentTo);
+        updateArrowDisabledState();
+        return;
+    }
+    
+    if (currentPresetType === 'month') {
+        let start = parseYMD(currentFrom);
+        let ns = new Date(start);
+        ns.setMonth(start.getMonth() + delta);
+        let ne = new Date(ns.getFullYear(), ns.getMonth() + 1, 0);
+        const newFromStr = formatYMD(ns);
+        if (delta === 1 && isFutureDate(newFromStr)) { 
+            showError("Cannot shift month into future."); 
+            return; 
+        }
+        currentFrom = newFromStr;
+        currentTo = formatYMD(ne);
+        updateDateLabel();
+        loadData(currentStore, currentFrom, currentTo);
+        updateArrowDisabledState();
+        return;
+    }
+    
+    if (currentPresetType === 'year') {
+        let start = parseYMD(currentFrom);
+        let ny = start.getFullYear() + delta;
+        let ns = new Date(ny, 0, 1);
+        const newFromStr = formatYMD(ns);
+        if (delta === 1 && isFutureDate(newFromStr)) { 
+            showError("Cannot shift year into future."); 
+            return; 
+        }
+        currentFrom = newFromStr;
+        currentTo = formatYMD(new Date(ny, 11, 31));
+        updateDateLabel();
+        loadData(currentStore, currentFrom, currentTo);
+        updateArrowDisabledState();
     }
 }
 
@@ -1240,128 +1131,6 @@ function updateDateLabel() {
     displayDateRangeSpan.innerText = label;
 }
 
-function updateArrowDisabledState() {
-    const leftArrowBtn = document.getElementById('leftArrowBtn');
-    const rightArrowBtn = document.getElementById('rightArrowBtn');
-    if (!leftArrowBtn || !rightArrowBtn) return;
-    
-    if (currentPresetType === 'custom') { 
-        rightArrowBtn.disabled = true; 
-        leftArrowBtn.disabled = false;
-        return; 
-    }
-    
-    let nextRange = getAdjacentRange('next');
-    let prevRange = getAdjacentRange('prev');
-    
-    // For "Today", disable left arrow (no previous day before today)
-    if (currentPresetType === 'day' && isTodayDate(currentFrom)) {
-        leftArrowBtn.disabled = true;
-    } else {
-        leftArrowBtn.disabled = !prevRange;
-    }
-    
-    rightArrowBtn.disabled = !nextRange || isFutureDate(nextRange.from);
-}
-
-function getAdjacentRange(dir) {
-    const delta = dir === 'next' ? 1 : -1;
-    if (currentPresetType === 'day') {
-        let d = currentDayDate ? new Date(currentDayDate) : new Date();
-        let nd = new Date(d);
-        nd.setDate(d.getDate() + delta);
-        return { from: formatYMD(nd), to: formatYMD(nd) };
-    }
-    if (currentPresetType === 'week') {
-        let start = parseYMD(currentFrom);
-        if (isNaN(start)) start = getWeekStart(new Date());
-        let ns = new Date(start);
-        ns.setDate(start.getDate() + delta * 7);
-        let ne = new Date(ns);
-        ne.setDate(ns.getDate() + 6);
-        return { from: formatYMD(ns), to: formatYMD(ne) };
-    }
-    if (currentPresetType === 'month') {
-        let start = currentFrom ? parseYMD(currentFrom) : new Date();
-        let ns = new Date(start);
-        ns.setMonth(start.getMonth() + delta);
-        let ne = new Date(ns.getFullYear(), ns.getMonth() + 1, 0);
-        return { from: formatYMD(ns), to: formatYMD(ne) };
-    }
-    if (currentPresetType === 'year') {
-        let start = currentFrom ? parseYMD(currentFrom) : new Date();
-        let ny = start.getFullYear() + delta;
-        let ns = new Date(ny, 0, 1);
-        let ne = new Date(ny, 11, 31);
-        return { from: formatYMD(ns), to: formatYMD(ne) };
-    }
-    return null;
-}
-
-function shiftDateRange(dir) {
-    if (refreshInProgress) return;
-    if (currentPresetType === 'custom') { showError("Custom range cannot be shifted. Select a preset."); return; }
-    const delta = dir === 'left' ? -1 : 1;
-    if (delta === 1) { const nextRange = getAdjacentRange('next'); if (nextRange && isFutureDate(nextRange.from)) { showError("Cannot go beyond today's date."); return; } }
-    
-    if (currentPresetType === 'day') {
-        if (!currentDayDate) currentDayDate = new Date();
-        let nd = new Date(currentDayDate);
-        nd.setDate(currentDayDate.getDate() + delta);
-        const newYMD = formatYMD(nd);
-        if (delta === 1 && isFutureDate(newYMD)) { showError("No future data."); return; }
-        currentDayDate = nd;
-        currentFrom = newYMD;
-        currentTo = currentFrom;
-        updateDateLabel();
-        loadData(currentStore, currentFrom, currentTo);
-        updateArrowDisabledState();
-        return;
-    }
-    if (currentPresetType === 'week') {
-        let start = parseYMD(currentFrom);
-        if (isNaN(start)) start = getWeekStart(new Date());
-        let ns = new Date(start);
-        ns.setDate(start.getDate() + delta * 7);
-        let ne = new Date(ns);
-        ne.setDate(ns.getDate() + 6);
-        const newFromStr = formatYMD(ns);
-        if (delta === 1 && isFutureDate(newFromStr)) { showError("Cannot shift week into future."); return; }
-        currentFrom = newFromStr;
-        currentTo = formatYMD(ne);
-        updateDateLabel();
-        loadData(currentStore, currentFrom, currentTo);
-        updateArrowDisabledState();
-        return;
-    }
-    if (currentPresetType === 'month') {
-        let start = parseYMD(currentFrom);
-        let ns = new Date(start);
-        ns.setMonth(start.getMonth() + delta);
-        let ne = new Date(ns.getFullYear(), ns.getMonth() + 1, 0);
-        const newFromStr = formatYMD(ns);
-        if (delta === 1 && isFutureDate(newFromStr)) { showError("Cannot shift month into future."); return; }
-        currentFrom = newFromStr;
-        currentTo = formatYMD(ne);
-        updateDateLabel();
-        loadData(currentStore, currentFrom, currentTo);
-        updateArrowDisabledState();
-        return;
-    }
-    if (currentPresetType === 'year') {
-        let start = parseYMD(currentFrom);
-        let ny = start.getFullYear() + delta;
-        let ns = new Date(ny, 0, 1);
-        const newFromStr = formatYMD(ns);
-        if (delta === 1 && isFutureDate(newFromStr)) { showError("Cannot shift year into future."); return; }
-        currentFrom = newFromStr;
-        currentTo = formatYMD(new Date(ny, 11, 31));
-        updateDateLabel();
-        loadData(currentStore, currentFrom, currentTo);
-        updateArrowDisabledState();
-    }
-}
-
 function showError(msg) { 
     const errorDiv = document.getElementById('errorMsg');
     if (!errorDiv) return;
@@ -1383,14 +1152,10 @@ function selectStore(storeKey, name) {
     currentStore = storeKey;
     currentStoreDisplay = name;
     document.getElementById('storeNameLabel').innerText = name;
-    
-    // Reset product category map for new store
     productCategoryMap = {};
     
-    // Load product categories for the store
     loadProductCategoryMap(storeKey).then(map => {
         productCategoryMap = map;
-        // Reload data
         loadData(currentStore, currentFrom, currentTo, true);
     });
     
@@ -1406,7 +1171,6 @@ async function refreshDashboard() {
     document.getElementById('errorMsg').style.display = 'none';
     
     try {
-        // Reload everything
         productCategoryMap = {};
         allEmployeesList = [];
         
@@ -2034,7 +1798,6 @@ async function downloadFullProductList() {
         
         const storeDisplayName = currentStore === 'all' ? 'ALL STORES' : currentStoreDisplay;
         
-        // Build CSV
         const sortedProducts = [...breakdown.products];
         switch(sortBy) {
             case 'revenue':
@@ -2121,9 +1884,8 @@ async function downloadFullProductList() {
     }
 }
 
-// ----- INIT -----
+// ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', function() {
-    // Set initial date
     const todayNow = new Date();
     currentPresetType = 'day';
     currentDayDate = new Date(todayNow);
@@ -2132,10 +1894,9 @@ document.addEventListener('DOMContentLoaded', function() {
     updateDateLabel();
     document.getElementById('storeNameLabel').innerText = "Queensbay Mall";
     
-    // Load data
     loadData(currentStore, currentFrom, currentTo);
     
-    // Setup event listeners
+    // Event listeners
     document.getElementById('headerRefreshBtn').addEventListener('click', refreshDashboard);
     document.getElementById('leftArrowBtn').addEventListener('click', () => shiftDateRange('left'));
     document.getElementById('rightArrowBtn').addEventListener('click', () => shiftDateRange('right'));
@@ -2160,7 +1921,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('applyCustomBtn').addEventListener('click', applyCustomRange);
     
-    // Chart toggle
     document.querySelectorAll('.toggle-btn').forEach(btn => {
         btn.addEventListener('click', () => { 
             document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active')); 
@@ -2170,7 +1930,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Download Report
     document.getElementById('downloadReportBtn').addEventListener('click', openReportModal);
     document.getElementById('closeReportDownloadModal').addEventListener('click', closeReportDownloadModal);
     document.getElementById('generateReportBtn').addEventListener('click', generateCSVReport);
@@ -2183,16 +1942,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }); 
     });
     
-    // Full product list download
     document.getElementById('downloadFullProductListBtn').addEventListener('click', downloadFullProductList);
     
-    // Sort product list
     document.getElementById('sortProductListSelect').addEventListener('change', () => {
-        // Re-render with new sort order
         if (isDataLoaded) {
             const receipts = rawReceiptsData || [];
             const breakdown = buildProductBreakdownFromReceipts(receipts, productCategoryMap);
-            // Re-render products section
             const prodDiv = document.getElementById('productsList');
             if (prodDiv && breakdown.products) {
                 const sortBy = document.getElementById('sortProductListSelect').value;
@@ -2248,7 +2003,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Receipt PDF
     document.getElementById('receiptPdfBtn').addEventListener('click', openReceiptChoiceModal);
     document.getElementById('closeChoiceModal').addEventListener('click', closeChoiceModalFunc);
     document.getElementById('receiptChoiceModal').addEventListener('click', (e) => { if(e.target === document.getElementById('receiptChoiceModal')) closeChoiceModalFunc(); });
@@ -2302,7 +2056,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('generateReceiptPdfBtn').addEventListener('click', generateReceiptPDF);
     
-    // IRS Receipt
     document.getElementById('closeIrsModal').addEventListener('click', () => { document.getElementById('irsReceiptModal').classList.remove('active'); });
     document.getElementById('irsReceiptModal').addEventListener('click', (e) => { if (e.target === document.getElementById('irsReceiptModal')) document.getElementById('irsReceiptModal').classList.remove('active'); });
     
@@ -2335,6 +2088,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('generateIrsPdfBtn').addEventListener('click', generateIrsReceiptPDF);
+    
+    setInterval(() => {
+        if (!refreshInProgress) {
+            loadData(currentStore, currentFrom, currentTo);
+        }
+    }, 5 * 60 * 1000);
 });
 
 console.log('✅ Dashboard initialized with Supabase');
