@@ -98,7 +98,8 @@
         }
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
         .toggle-group { display: flex; background: #f0f3f9; border-radius: 50px; padding: 4px; }
-        .toggle-btn { padding: 8px 20px; border: none; border-radius: 40px; font-weight: 600; font-size: 0.8rem; cursor: pointer; background: transparent; }
+        .toggle-btn { padding: 8px 20px; border: none; border-radius: 40px; font-weight: 600; font-size: 0.8rem; cursor: pointer; background: transparent; transition: 0.2s; }
+        .toggle-btn:hover:not(.active) { background: #e4e9f2; }
         .toggle-btn.active { background: #1e4668; color: white; }
         .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 28px; }
         .kpi-card { background: white; border-radius: 32px; padding: 20px 16px; border: 1px solid #eef2f8; }
@@ -178,7 +179,6 @@
         .irs-total-display { background: #f0f3f9; border-radius: 16px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.9rem; }
         .irs-total-display strong { color: #b85c1a; }
         
-        /* Store Selector Panel Fixes */
         .store-option-trigger {
             background: #f8fafd;
             padding: 14px 18px;
@@ -237,6 +237,9 @@
         .refund-badge { background: #fee2e2; color: #b91c1c; padding: 2px 10px; border-radius: 30px; font-size: 11px; margin-left: 12px; }
         .grand-total { margin-top: 28px; text-align: right; font-weight: 800; font-size: 20px; background: #f8fafd; padding: 16px 24px; border-radius: 20px; color: #b85c1a; }
         .count-badge { background: #eef2fa; border-radius: 40px; padding: 4px 16px; font-size: 12px; display: inline-block; margin-top: 8px; }
+        .view-mode-selector { display: flex; gap: 8px; align-items: center; margin-left: 16px; }
+        .view-mode-selector select { padding: 6px 12px; border-radius: 40px; border: 1px solid #dce3ec; font-size: 0.8rem; background: white; }
+        .view-mode-selector label { font-size: 0.8rem; color: #4a627a; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -307,9 +310,18 @@
     <div class="section-card">
         <div class="chart-header">
             <div class="section-title" style="margin-bottom:0; border-left: none;">📈 Sales Trend</div>
-            <div class="toggle-group" id="chartToggleGroup">
-                <button class="toggle-btn active" data-chart-type="line">Line</button>
-                <button class="toggle-btn" data-chart-type="bar">Bar</button>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <div class="view-mode-selector">
+                    <label for="viewModeSelect">View:</label>
+                    <select id="viewModeSelect">
+                        <option value="daily">Daily</option>
+                        <option value="hourly" selected>Hourly</option>
+                    </select>
+                </div>
+                <div class="toggle-group" id="chartToggleGroup">
+                    <button class="toggle-btn active" data-chart-type="line">Line</button>
+                    <button class="toggle-btn" data-chart-type="bar">Bar</button>
+                </div>
             </div>
         </div>
         <canvas id="trendChart"></canvas>
@@ -402,6 +414,7 @@ let currentFrom = "", currentTo = "";
 let currentPresetType = "day";
 let currentDayDate = null;
 let currentChartType = "line";
+let currentViewMode = "hourly"; // "daily" or "hourly"
 let allEmployeesList = [];
 let productCategoryMap = {};
 let rawReceiptsData = [];
@@ -671,87 +684,143 @@ function buildProductBreakdownFromReceipts(receipts, categoryMap) {
     };
 }
 
+// ----- Build hourly chart data -----
+function buildHourlyChartData(receipts, fromDate, toDate) {
+    // Determine the target date (if range is exactly one day, use that day; else use fromDate)
+    const isSingleDay = fromDate === toDate;
+    let targetDate = fromDate;
+    
+    // Initialize all 24 hours with 0
+    const hourlyData = {};
+    for (let h = 0; h < 24; h++) {
+        const hourStr = String(h).padStart(2, '0');
+        const label = `${hourStr}:00`;
+        hourlyData[label] = 0;
+    }
+    
+    // Process receipts
+    receipts.forEach(rec => {
+        if (!rec.timestamp) return;
+        const date = new Date(rec.timestamp);
+        const dateStr = formatYMD(date);
+        
+        // Only include if same day (for single day) or within range
+        if (isSingleDay) {
+            if (dateStr !== fromDate) return;
+        } else {
+            // For multi-day range, we aggregate by hour across all days
+            // Or we could show all hours for the first day - for simplicity, we'll aggregate
+            // But better: show hourly for each day? For now, aggregate all days into 24h slots
+            // Actually for "hourly" view with multi-day, we show average or total per hour
+            // Let's show total per hour across the range
+        }
+        
+        const hour = date.getHours();
+        const hourStr = String(hour).padStart(2, '0');
+        const label = `${hourStr}:00`;
+        const total = parseFloat(rec.total) || 0;
+        hourlyData[label] = (hourlyData[label] || 0) + total;
+    });
+    
+    // Convert to arrays
+    const labels = Object.keys(hourlyData).sort();
+    const data = labels.map(h => hourlyData[h]);
+    
+    return {
+        labels: labels,
+        data: data,
+        title: isSingleDay ? `Hourly Sales for ${fromDate}` : `Hourly Sales (${fromDate} to ${toDate})`
+    };
+}
+
 function renderChartWithData(chartData) {
     const ctx = document.getElementById('trendChart');
     if (!ctx) return;
     const context = ctx.getContext('2d');
     if (trendChart) trendChart.destroy();
+    
     let labels = [], vals = [];
+    
+    // Check if we should show hourly view
+    const viewMode = document.getElementById('viewModeSelect')?.value || 'daily';
+    const isHourly = viewMode === 'hourly';
+    
     if (chartData && chartData.salesByDay) {
-        labels = chartData.salesByDay.labels;
-        vals = chartData.salesByDay.data;
+        if (isHourly && currentPresetType === 'day') {
+            // Build hourly data from raw receipts
+            const hourlyData = buildHourlyChartData(rawReceiptsData, currentFrom, currentTo);
+            labels = hourlyData.labels;
+            vals = hourlyData.data;
+        } else {
+            labels = chartData.salesByDay.labels;
+            vals = chartData.salesByDay.data;
+        }
     }
+    
     if (labels.length > 0) {
+        // Determine if we're showing hourly labels (24 hours)
+        const isHourlyView = labels.length === 24 && labels.every(l => l.endsWith(':00'));
+        
         trendChart = new Chart(context, {
             type: currentChartType,
-            data: { labels, datasets: [{ label: 'Sales (RM)', data: vals, borderColor: '#2b6e9e', backgroundColor: currentChartType === 'bar' ? 'rgba(43,110,158,0.6)' : 'rgba(43,110,158,0.1)', borderWidth: 2, tension: 0.3, fill: currentChartType !== 'bar', pointRadius: currentChartType === 'line' ? 3 : 0 }] },
-            options: { responsive: true, maintainAspectRatio: true, plugins: { tooltip: { callbacks: { label: (ctx) => `RM ${ctx.raw.toFixed(2)}` } } } }
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: isHourlyView ? 'Sales (RM) per Hour' : 'Sales (RM)', 
+                    data: vals, 
+                    borderColor: '#2b6e9e', 
+                    backgroundColor: currentChartType === 'bar' ? 'rgba(43,110,158,0.6)' : 'rgba(43,110,158,0.1)', 
+                    borderWidth: 2, 
+                    tension: 0.3, 
+                    fill: currentChartType !== 'bar', 
+                    pointRadius: currentChartType === 'line' ? (isHourlyView ? 3 : 3) : 0 
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: true,
+                plugins: { 
+                    tooltip: { 
+                        callbacks: { 
+                            label: (ctx) => `RM ${ctx.raw.toFixed(2)}` 
+                        } 
+                    } 
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            maxTicksLimit: isHourlyView ? 24 : 20,
+                            maxRotation: 45,
+                            minRotation: 0
+                        }
+                    }
+                }
+            }
         });
     }
 }
 
-function renderMonthlyBreakdown(receipts) {
-    const monthlyBreakdown = document.getElementById('monthlyBreakdown');
-    const monthlyGrid = document.getElementById('monthlyGrid');
+// ----- New function to render chart based on view mode -----
+function renderChartWithViewMode(chartData) {
+    const viewMode = document.getElementById('viewModeSelect')?.value || 'daily';
     
-    if (!monthlyBreakdown || !monthlyGrid) return;
-    
-    if (currentPresetType === 'year' || currentPresetType === 'lastyear') {
-        monthlyBreakdown.classList.add('visible');
+    if (viewMode === 'hourly' && currentPresetType === 'day') {
+        // Use hourly data
+        const hourlyData = buildHourlyChartData(rawReceiptsData, currentFrom, currentTo);
+        const fakeChartData = {
+            salesByDay: {
+                labels: hourlyData.labels,
+                data: hourlyData.data
+            }
+        };
+        renderChartWithData(fakeChartData);
     } else {
-        monthlyBreakdown.classList.remove('visible');
-        return;
+        renderChartWithData(chartData);
     }
-    
-    const monthlyTotals = {};
-    const monthlyTxns = {};
-    
-    receipts.forEach(rec => {
-        if (!rec.timestamp) return;
-        const date = new Date(rec.timestamp);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        
-        const total = parseFloat(rec.total) || 0;
-        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + total;
-        monthlyTxns[monthKey] = (monthlyTxns[monthKey] || 0) + 1;
-    });
-    
-    const year = parseInt(currentFrom.split('-')[0]);
-    
-    const allMonths = [];
-    for (let m = 1; m <= 12; m++) {
-        const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-        allMonths.push(monthKey);
-    }
-    
-    let maxTotal = 0;
-    Object.values(monthlyTotals).forEach(v => { if (v > maxTotal) maxTotal = v; });
-    
-    let html = '';
-    allMonths.forEach(monthKey => {
-        const total = monthlyTotals[monthKey] || 0;
-        const txnCount = monthlyTxns[monthKey] || 0;
-        const [yearStr, monthStr] = monthKey.split('-');
-        const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
-        const monthName = date.toLocaleString('default', { month: 'short' });
-        const isHighlight = total === maxTotal && maxTotal > 0;
-        const hasData = total > 0;
-        
-        html += `
-            <div class="month-card ${isHighlight ? 'month-highlight' : ''} ${!hasData ? 'month-empty' : ''}" 
-                 data-month="${monthKey}" 
-                 style="cursor:${hasData ? 'pointer' : 'default'};">
-                <div class="month-name">${monthName} ${yearStr}</div>
-                <div class="month-total ${total < 1000 && total > 0 ? 'small' : ''}" style="${total === 0 ? 'color:#aaa;' : ''}">
-                    ${total === 0 ? '—' : `<span class="currency-symbol">RM</span> ${total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`}
-                </div>
-                <div style="font-size:0.65rem; color:#6c86a3; margin-top:4px;">${total === 0 ? 'No sales' : `${txnCount} transactions`}</div>
-            </div>
-        `;
-    });
-    
-    monthlyGrid.innerHTML = html;
 }
+
+// ----- Update the loadData function to call renderChartWithViewMode -----
+// We'll override the updateUI function to use the new render method
 
 function updateUI(data, receipts) {
     if (!data) return;
@@ -907,7 +976,72 @@ function updateUI(data, receipts) {
     }
     
     renderMonthlyBreakdown(receipts || []);
-    renderChartWithData(chart);
+    
+    // Use the new view mode render
+    renderChartWithViewMode(chart);
+}
+
+function renderMonthlyBreakdown(receipts) {
+    const monthlyBreakdown = document.getElementById('monthlyBreakdown');
+    const monthlyGrid = document.getElementById('monthlyGrid');
+    
+    if (!monthlyBreakdown || !monthlyGrid) return;
+    
+    if (currentPresetType === 'year' || currentPresetType === 'lastyear') {
+        monthlyBreakdown.classList.add('visible');
+    } else {
+        monthlyBreakdown.classList.remove('visible');
+        return;
+    }
+    
+    const monthlyTotals = {};
+    const monthlyTxns = {};
+    
+    receipts.forEach(rec => {
+        if (!rec.timestamp) return;
+        const date = new Date(rec.timestamp);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        const total = parseFloat(rec.total) || 0;
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + total;
+        monthlyTxns[monthKey] = (monthlyTxns[monthKey] || 0) + 1;
+    });
+    
+    const year = parseInt(currentFrom.split('-')[0]);
+    
+    const allMonths = [];
+    for (let m = 1; m <= 12; m++) {
+        const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+        allMonths.push(monthKey);
+    }
+    
+    let maxTotal = 0;
+    Object.values(monthlyTotals).forEach(v => { if (v > maxTotal) maxTotal = v; });
+    
+    let html = '';
+    allMonths.forEach(monthKey => {
+        const total = monthlyTotals[monthKey] || 0;
+        const txnCount = monthlyTxns[monthKey] || 0;
+        const [yearStr, monthStr] = monthKey.split('-');
+        const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
+        const monthName = date.toLocaleString('default', { month: 'short' });
+        const isHighlight = total === maxTotal && maxTotal > 0;
+        const hasData = total > 0;
+        
+        html += `
+            <div class="month-card ${isHighlight ? 'month-highlight' : ''} ${!hasData ? 'month-empty' : ''}" 
+                 data-month="${monthKey}" 
+                 style="cursor:${hasData ? 'pointer' : 'default'};">
+                <div class="month-name">${monthName} ${yearStr}</div>
+                <div class="month-total ${total < 1000 && total > 0 ? 'small' : ''}" style="${total === 0 ? 'color:#aaa;' : ''}">
+                    ${total === 0 ? '—' : `<span class="currency-symbol">RM</span> ${total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`}
+                </div>
+                <div style="font-size:0.65rem; color:#6c86a3; margin-top:4px;">${total === 0 ? 'No sales' : `${txnCount} transactions`}</div>
+            </div>
+        `;
+    });
+    
+    monthlyGrid.innerHTML = html;
 }
 
 async function loadData(store, from, to, forceRefresh = false) {
@@ -993,6 +1127,10 @@ async function loadData(store, from, to, forceRefresh = false) {
                 data: sortedDates.map(d => dailySales[d])
             }
         };
+        
+        // Also store hourly data separately
+        const hourlyData = buildHourlyChartData(receipts, from, to);
+        chartData.hourly = hourlyData;
         
         updateUI({
             sales: salesData,
@@ -1486,7 +1624,6 @@ function buildIrsReceiptsHtml(receipts, storeName, fromDate, toDate, employeeFil
             <div style="margin-top:12px; font-size:11px;">Generated on ${new Date().toLocaleString()}</div>
         </div>
         ${receipts.map((rec, idx) => {
-            // ====== FIX: Parse items if it's a string ======
             let itemsList = rec.items;
             if (typeof itemsList === 'string') {
                 try {
@@ -1498,7 +1635,6 @@ function buildIrsReceiptsHtml(receipts, storeName, fromDate, toDate, employeeFil
             if (!itemsList || !Array.isArray(itemsList)) {
                 itemsList = [];
             }
-            // ====== END FIX ======
             
             const isRefund = parseFloat(rec.total) < 0;
             const invoiceId = rec.invoice_no || rec.transaction_id || `IRS-${idx}`;
@@ -1589,7 +1725,6 @@ async function generateIrsReceiptPDF() {
     loadingDiv.innerText = `Generating IRS report...`;
     document.body.appendChild(loadingDiv);
     try {
-        // ====== FETCH FROM IRS TABLE ======
         let query = supabaseClient
             .from('irs_reporting')
             .select('*')
@@ -1612,9 +1747,6 @@ async function generateIrsReceiptPDF() {
         if (error) throw error;
         
         let receipts = data || [];
-        // ====== END OF IRS FETCH ======
-        
-        // NO payment method filter needed - IRS table is already filtered
         
         if (selectedEmployeeName) {
             receipts = receipts.filter(r => 
@@ -1805,8 +1937,16 @@ document.addEventListener('DOMContentLoaded', async function() {
             document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active')); 
             btn.classList.add('active'); 
             currentChartType = btn.getAttribute('data-chart-type'); 
-            if (lastChartResponseData) renderChartWithData(lastChartResponseData); 
+            if (lastChartResponseData) renderChartWithViewMode(lastChartResponseData); 
         });
+    });
+    
+    // View mode selector
+    document.getElementById('viewModeSelect').addEventListener('change', function() {
+        currentViewMode = this.value;
+        if (lastChartResponseData) {
+            renderChartWithViewMode(lastChartResponseData);
+        }
     });
     
     document.getElementById('downloadReportBtn').addEventListener('click', function() {
@@ -1822,7 +1962,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('closeIrsModal').addEventListener('click', () => { document.getElementById('irsReceiptModal').classList.remove('active'); });
     document.getElementById('irsReceiptModal').addEventListener('click', (e) => { if (e.target === document.getElementById('irsReceiptModal')) document.getElementById('irsReceiptModal').classList.remove('active'); });
     
-    // ====== FIXED: IRS Store Selector Event Listeners ======
     document.getElementById('irsStoreOptionTrigger').addEventListener('click', function(e) {
         e.stopPropagation();
         const panel = document.getElementById('irsStoreSelectorPanel');
@@ -1831,7 +1970,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // Close panel when clicking outside
     document.addEventListener('click', function(e) {
         const panel = document.getElementById('irsStoreSelectorPanel');
         const trigger = document.getElementById('irsStoreOptionTrigger');
@@ -1861,7 +1999,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             document.getElementById('irsStoreSelectorPanel').classList.remove('open');
         });
     });
-    // ====== END FIXED ======
     
     document.querySelectorAll('[data-irs-preset]').forEach(btn => {
         btn.addEventListener('click', async function() {
