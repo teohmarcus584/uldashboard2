@@ -302,6 +302,15 @@
             text-align: left;
             border-bottom: 1px solid #ecf0f5;
         }
+        .mini-table .discount-row td {
+            color: #b85c1a;
+            font-weight: 700;
+            font-style: italic;
+            background: #fef3c7;
+        }
+        .mini-table .discount-row td:last-child {
+            color: #b85c1a;
+        }
         .badge {
             background: #eef2ff;
             border-radius: 40px;
@@ -324,6 +333,16 @@
         .badge-paid {
             background: #d1fae5;
             color: #065f46;
+            border-radius: 40px;
+            padding: 4px 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-block;
+            margin-left: 6px;
+        }
+        .badge-discount {
+            background: #fef3c7;
+            color: #b85c1a;
             border-radius: 40px;
             padding: 4px 10px;
             font-size: 0.7rem;
@@ -863,7 +882,7 @@
             <div id="productTotalWarning" class="missing-warning" style="display:none;"></div>
             <div id="productTotalSuccess" class="success-warning" style="display:none;"></div>
             <div id="productsList"><div class="skeleton product-skeleton"></div><div class="skeleton product-skeleton"></div><div class="skeleton product-skeleton"></div></div>
-            <div class="note">* 🎁 = Free item (Buy X Free Y promotion). 💰 = Paid item.</div>
+            <div class="note">* 🎁 = Free item (Buy X Free Y promotion). 💰 = Paid item. 🏷️ = Discount adjustment</div>
         </div>
 
         <div class="section-card">
@@ -1277,7 +1296,7 @@
             };
         }
 
-        // ---------- HOURLY CHART BUILD (for "today" range) ----------
+        // ---------- HOURLY CHART BUILD (for ANY single day selection) ----------
         function buildHourlyChartData(receipts, targetDateYMD) {
             // Create 24 slots, each hour 0..23
             const hourSales = new Array(24).fill(0);
@@ -1304,6 +1323,24 @@
             };
         }
 
+        // ---------- DAILY CHART BUILD (for month, week, year, custom ranges) ----------
+        function buildDailyChartData(receipts) {
+            const dailySales = {};
+            receipts.forEach(r => {
+                if (r.timestamp) {
+                    const date = r.timestamp.split('T')[0];
+                    dailySales[date] = (dailySales[date] || 0) + (parseFloat(r.total) || 0);
+                }
+            });
+            const sortedDates = Object.keys(dailySales).sort();
+            return {
+                salesByDay: {
+                    labels: sortedDates,
+                    data: sortedDates.map(d => dailySales[d])
+                }
+            };
+        }
+
         function renderChartWithData(chartData, isHourly = false) {
             const ctx = document.getElementById('trendChart');
             if (!ctx) return;
@@ -1326,7 +1363,7 @@
                     data: {
                         labels,
                         datasets: [{
-                            label: isHourly ? 'Hourly Sales (RM)' : 'Sales (RM)',
+                            label: isHourly ? 'Hourly Sales (RM)' : 'Daily Sales (RM)',
                             data: vals,
                             borderColor: '#2b6e9e',
                             backgroundColor: currentChartType === 'bar' ? 'rgba(43,110,158,0.6)' : 'rgba(43,110,158,0.1)',
@@ -1343,6 +1380,15 @@
                             tooltip: {
                                 callbacks: {
                                     label: (ctx) => `RM ${ctx.raw.toFixed(2)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    maxRotation: 45,
+                                    autoSkip: true,
+                                    maxTicksLimit: 20
                                 }
                             }
                         }
@@ -1451,16 +1497,18 @@
             const breakdown = buildProductBreakdownFromReceipts(receipts || [], productCategoryMap);
             const productSalesTotal = breakdown.totalSales;
             const salesTotal = sales.totalSales || 0;
+            const diff = salesTotal - productSalesTotal;
+            const hasDiscount = Math.abs(diff) > 0.01;
+            const discountAmount = diff; // Positive means product total is less than sales total
 
             const warningDiv = document.getElementById('productTotalWarning');
             const successDiv2 = document.getElementById('productTotalSuccess');
-            const diff = Math.abs(productSalesTotal - salesTotal);
 
             if (warningDiv && successDiv2) {
-                if (diff > 0.01) {
+                if (hasDiscount) {
                     warningDiv.style.display = 'block';
                     warningDiv.innerHTML =
-                        `⚠️ <strong>Data Discrepancy:</strong> Product breakdown total (RM ${productSalesTotal.toFixed(2)}) doesn't match Total Sales (RM ${salesTotal.toFixed(2)}). Difference: RM ${diff.toFixed(2)}. Free items: ${breakdown.freeItemCount} (RM ${breakdown.totalFreeItemValue.toFixed(2)} value).`;
+                        `📊 <strong>Discount Adjustment:</strong> Product breakdown total (RM ${productSalesTotal.toFixed(2)}) differs from Total Sales (RM ${salesTotal.toFixed(2)}). Difference: RM ${Math.abs(diff).toFixed(2)}. Free items: ${breakdown.freeItemCount} (RM ${breakdown.totalFreeItemValue.toFixed(2)} value).`;
                     warningDiv.className = 'missing-warning';
                     successDiv2.style.display = 'none';
                 } else {
@@ -1578,8 +1626,35 @@
                                     </tr>
                                 `;
                     });
-                    h +=
-                        `<tr class="total-row"><td><strong>TOTAL</strong></td><td></td><td>${formatNumber(totalQ)}</td><td>${formatNumber(totalPaid)}</td><td>${formatNumber(totalFree)}</td><td>${formatMYR(totalRev)}</td></tr>`;
+                    
+                    // Add discount row if there's a discrepancy
+                    if (hasDiscount) {
+                        const discountDisplay = diff > 0 ? `-RM ${Math.abs(diff).toFixed(2)}` : `+RM ${Math.abs(diff).toFixed(2)}`;
+                        const discountLabel = diff > 0 ? '🏷️ Discount Adjustment' : '🏷️ Adjustment';
+                        h += `
+                            <tr class="discount-row">
+                                <td><strong>${discountLabel}</strong></td>
+                                <td><span class="badge-discount">Adjustment</span></td>
+                                <td>—</td>
+                                <td>—</td>
+                                <td>—</td>
+                                <td><strong>${discountDisplay}</strong></td>
+                            </tr>
+                        `;
+                        // Update total with discount
+                        totalRev += diff;
+                    }
+                    
+                    h += `
+                        <tr class="total-row" style="font-weight:800; background:#f0f3f9;">
+                            <td><strong>TOTAL (with discounts)</strong></td>
+                            <td></td>
+                            <td>${formatNumber(totalQ)}</td>
+                            <td>${formatNumber(totalPaid)}</td>
+                            <td>${formatNumber(totalFree)}</td>
+                            <td>${formatMYR(totalRev)}</td>
+                        </tr>
+                    `;
                     h += '</tbody></table>';
                     prodDiv.innerHTML = h;
                 }
@@ -1587,13 +1662,22 @@
 
             renderMonthlyBreakdown(receipts || []);
 
-            // ---------- HOURLY CHART LOGIC (only for "today" preset) ----------
-            const isTodayPreset = (currentPresetType === 'day' && isTodayDate(currentFrom));
-            if (isTodayPreset && receipts && receipts.length > 0) {
-                const hourlyData = buildHourlyChartData(receipts, currentFrom);
+            // ---------- CHART LOGIC ----------
+            // Check if we're viewing a single day (presetType === 'day')
+            // OR if it's a custom range with only 1 day (from === to)
+            const isSingleDay = (currentPresetType === 'day') || (currentPresetType === 'custom' && currentFrom === currentTo);
+            
+            if (isSingleDay && receipts && receipts.length > 0) {
+                // Show HOURLY chart for any single day
+                const targetDate = currentFrom; // Use the selected date
+                const hourlyData = buildHourlyChartData(receipts, targetDate);
                 renderChartWithData(hourlyData, true);
+                console.log('📊 Showing HOURLY chart for single day:', targetDate);
             } else {
-                renderChartWithData(chart);
+                // Show DAILY chart for week, month, year, or multi-day custom ranges
+                const dailyData = buildDailyChartData(receipts);
+                renderChartWithData(dailyData, false);
+                console.log('📊 Showing DAILY chart for multi-day range');
             }
         }
 
@@ -1670,20 +1754,7 @@
                     data: Object.values(employeeSales)
                 };
 
-                const dailySales = {};
-                receipts.forEach(r => {
-                    if (r.timestamp) {
-                        const date = r.timestamp.split('T')[0];
-                        dailySales[date] = (dailySales[date] || 0) + (parseFloat(r.total) || 0);
-                    }
-                });
-                const sortedDates = Object.keys(dailySales).sort();
-                const chartData = {
-                    salesByDay: {
-                        labels: sortedDates,
-                        data: sortedDates.map(d => dailySales[d])
-                    }
-                };
+                const chartData = buildDailyChartData(receipts);
 
                 updateUI({
                     sales: salesData,
@@ -2504,8 +2575,8 @@
                     currentChartType = btn.getAttribute('data-chart-type');
                     // re-render with current data
                     if (isDataLoaded) {
-                        const isTodayPreset = (currentPresetType === 'day' && isTodayDate(currentFrom));
-                        if (isTodayPreset && rawReceiptsData && rawReceiptsData.length > 0) {
+                        const isSingleDay = (currentPresetType === 'day') || (currentPresetType === 'custom' && currentFrom === currentTo);
+                        if (isSingleDay && rawReceiptsData && rawReceiptsData.length > 0) {
                             const hourlyData = buildHourlyChartData(rawReceiptsData, currentFrom);
                             renderChartWithData(hourlyData, true);
                         } else {
@@ -2644,8 +2715,38 @@
                                         </tr>
                                     `;
                         });
-                        h +=
-                            `<tr class="total-row"><td><strong>TOTAL</strong></td><td></td><td>${formatNumber(totalQ)}</td><td>${formatNumber(totalPaid)}</td><td>${formatNumber(totalFree)}</td><td>${formatMYR(totalRev)}</td></tr>`;
+                        
+                        // Add discount row if there's a discrepancy
+                        const salesTotal = parseFloat(document.getElementById('totalSales').innerText.replace('RM ', '')) || 0;
+                        const diff = salesTotal - totalRev;
+                        const hasDiscount = Math.abs(diff) > 0.01;
+                        
+                        if (hasDiscount) {
+                            const discountDisplay = diff > 0 ? `-RM ${Math.abs(diff).toFixed(2)}` : `+RM ${Math.abs(diff).toFixed(2)}`;
+                            const discountLabel = diff > 0 ? '🏷️ Discount Adjustment' : '🏷️ Adjustment';
+                            h += `
+                                <tr class="discount-row">
+                                    <td><strong>${discountLabel}</strong></td>
+                                    <td><span class="badge-discount">Adjustment</span></td>
+                                    <td>—</td>
+                                    <td>—</td>
+                                    <td>—</td>
+                                    <td><strong>${discountDisplay}</strong></td>
+                                </tr>
+                            `;
+                            totalRev += diff;
+                        }
+                        
+                        h += `
+                            <tr class="total-row" style="font-weight:800; background:#f0f3f9;">
+                                <td><strong>TOTAL (with discounts)</strong></td>
+                                <td></td>
+                                <td>${formatNumber(totalQ)}</td>
+                                <td>${formatNumber(totalPaid)}</td>
+                                <td>${formatNumber(totalFree)}</td>
+                                <td>${formatMYR(totalRev)}</td>
+                            </tr>
+                        `;
                         h += '</tbody></table>';
                         prodDiv.innerHTML = h;
                     }
@@ -2655,7 +2756,7 @@
             document.getElementById('downloadFullProductListBtn').addEventListener('click', downloadFullProductList);
         });
 
-        console.log('✅ IRS Dashboard initialized with Supabase (hourly chart for Today, month-by-month fetching for yearly data)');
+        console.log('✅ IRS Dashboard initialized with Supabase (Hourly for ANY single day, Daily for week/month/year/custom multi-day, Discount row in product breakdown)');
     </script>
 </body>
 </html>
