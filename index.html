@@ -252,7 +252,7 @@
         .store-breakdown.visible { display: block; }
         .store-breakdown-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
             gap: 16px;
             margin-top: 12px;
         }
@@ -291,9 +291,57 @@
         .store-breakdown-title {
             font-weight: 800;
             font-size: 1.1rem;
-            border-left: 5px solid #b85c1a;
             padding-left: 14px;
             margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .store-breakdown-title .title-left {
+            border-left: 5px solid #b85c1a;
+            padding-left: 14px;
+        }
+        .store-breakdown-title .title-total {
+            background: #eef2ff;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            color: #1a2c42;
+            border: 1px solid #2b6e9e;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .store-breakdown-title .title-total strong {
+            color: #b85c1a;
+        }
+        .store-breakdown-title .title-total .compare-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 30px;
+            display: inline-block;
+        }
+        .store-breakdown-title .title-total .compare-badge.up {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .store-breakdown-title .title-total .compare-badge.down {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .store-breakdown-title .title-total .compare-badge.flat {
+            background: #f0f3f9;
+            color: #6c86a3;
+        }
+        .store-breakdown-title .title-total .prev-total {
+            font-size: 0.65rem;
+            font-weight: 400;
+            color: #6c86a3;
         }
         .store-breakdown-sub {
             font-size: 0.8rem;
@@ -305,6 +353,30 @@
             font-size: 0.8rem;
             color: #4a627a;
             padding: 4px 12px;
+        }
+        .comparison-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 30px;
+            margin-left: 6px;
+        }
+        .comparison-up {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .comparison-down {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .comparison-flat {
+            background: #f0f3f9;
+            color: #6c86a3;
+        }
+        .store-card .card-compare {
+            font-size: 0.7rem;
+            margin-top: 4px;
         }
     </style>
 </head>
@@ -347,8 +419,15 @@
 
     <!-- Store Breakdown (Month/Day view) -->
     <div class="store-breakdown" id="storeBreakdown">
-        <div class="store-breakdown-title">🏪 Store Sales Breakdown</div>
-        <div class="store-breakdown-sub">Sales by store for the selected period</div>
+        <div class="store-breakdown-title">
+            <span class="title-left">🏪 Store Sales Breakdown</span>
+            <span class="title-total" id="storeBreakdownTotal">
+                📊 TOTAL: <strong>RM 0.00</strong>
+                <span class="compare-badge">—</span>
+                <span class="prev-total"></span>
+            </span>
+        </div>
+        <div class="store-breakdown-sub">Sales by store with comparison vs previous period</div>
         <div class="store-breakdown-grid" id="storeBreakdownGrid">
             <!-- Dynamically populated -->
         </div>
@@ -484,7 +563,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 console.log('✅ Dashboard using Supabase');
 
 // ==================== STATE ====================
-let currentStore = "all";  // Changed default to "all"
+let currentStore = "all";
 let currentStoreDisplay = "All Stores";
 let currentFrom = "", currentTo = "";
 let currentPresetType = "day";
@@ -620,7 +699,7 @@ async function fetchIrsReceipts(store, from, to) {
 async function fetchMonthlyReceipts(store, year, month) {
     try {
         const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0); // Last day of month
+        const endDate = new Date(year, month, 0);
         
         const fromStr = formatYMD(startDate);
         const toStr = formatYMD(endDate);
@@ -663,7 +742,6 @@ async function fetchReceiptsYearly(store, from, to) {
         let allReceipts = [];
         let totalFetched = 0;
         
-        // Fetch month by month to avoid 1000 row limit
         for (let year = fromYear; year <= toYear; year++) {
             const startMonth = (year === fromYear) ? fromMonth : 1;
             const endMonth = (year === toYear) ? toMonth : 12;
@@ -691,7 +769,6 @@ async function fetchReceipts(store, from, to, isYearly = false) {
             return await fetchReceiptsYearly(store, from, to);
         }
         
-        // For non-yearly, use regular query
         let query = supabaseClient
             .from('transactions')
             .select('*')
@@ -989,10 +1066,55 @@ function renderChartWithViewMode(chartData) {
     }
 }
 
-// ----- Store Breakdown for Month/Day view -----
+// ----- Get previous period for comparison -----
+function getPreviousPeriod(from, to) {
+    const fromDate = new Date(from + 'T00:00:00+08:00');
+    const toDate = new Date(to + 'T23:59:59+08:00');
+    
+    // For "This Month", compare against same date range of previous month (1st to today's date)
+    if (currentPresetType === 'month') {
+        const today = new Date();
+        const currentMonth = fromDate.getMonth();
+        const currentYear = fromDate.getFullYear();
+        
+        // Check if this is the current month
+        const isCurrentMonth = (currentMonth === today.getMonth() && currentYear === today.getFullYear());
+        
+        if (isCurrentMonth) {
+            // Previous month, same date range (1st to today's date)
+            const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+            const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+            const prevDay = Math.min(today.getDate(), lastDayOfPrevMonth);
+            
+            const prevFrom = new Date(currentYear, currentMonth - 1, 1);
+            const prevTo = new Date(currentYear, currentMonth - 1, prevDay);
+            
+            return {
+                from: formatYMD(prevFrom),
+                to: formatYMD(prevTo)
+            };
+        }
+    }
+    
+    // For other presets, use same duration shift
+    const durationDays = Math.floor((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
+    
+    const prevFrom = new Date(fromDate);
+    prevFrom.setDate(prevFrom.getDate() - durationDays);
+    const prevTo = new Date(toDate);
+    prevTo.setDate(prevTo.getDate() - durationDays);
+    
+    return {
+        from: formatYMD(prevFrom),
+        to: formatYMD(prevTo)
+    };
+}
+
+// ----- Store Breakdown for Month/Day view with comparison -----
 async function renderStoreBreakdown(from, to) {
     const container = document.getElementById('storeBreakdown');
     const grid = document.getElementById('storeBreakdownGrid');
+    const totalEl = document.getElementById('storeBreakdownTotal');
     
     if (!container || !grid) return;
     
@@ -1010,34 +1132,85 @@ async function renderStoreBreakdown(from, to) {
         let html = '';
         let totalAllStores = 0;
         let totalTxnsAll = 0;
+        let prevTotalAllStores = 0;
         
+        // Get previous period for comparison
+        const prevPeriod = getPreviousPeriod(from, to);
+        
+        // Fetch current and previous data for each store
+        const storeData = [];
         for (const storeKey of stores) {
-            const receipts = await fetchStoreReceipts(storeKey, from, to);
-            const totalSales = receipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
-            const txnCount = receipts.length;
-            const storeName = STORE_NAMES[storeKey] || storeKey;
+            const [currentReceipts, prevReceipts] = await Promise.all([
+                fetchStoreReceipts(storeKey, from, to),
+                fetchStoreReceipts(storeKey, prevPeriod.from, prevPeriod.to)
+            ]);
             
-            totalAllStores += totalSales;
-            totalTxnsAll += txnCount;
+            const currentTotal = currentReceipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
+            const currentTxns = currentReceipts.length;
+            const prevTotal = prevReceipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
+            
+            totalAllStores += currentTotal;
+            totalTxnsAll += currentTxns;
+            prevTotalAllStores += prevTotal;
+            
+            storeData.push({
+                key: storeKey,
+                name: STORE_NAMES[storeKey] || storeKey,
+                currentTotal: currentTotal,
+                currentTxns: currentTxns,
+                prevTotal: prevTotal
+            });
+        }
+        
+        // Sort stores by total sales (highest first)
+        storeData.sort((a, b) => b.currentTotal - a.currentTotal);
+        
+        // Render each store card
+        storeData.forEach(store => {
+            const change = store.prevTotal > 0 ? ((store.currentTotal - store.prevTotal) / store.prevTotal * 100) : 
+                           (store.currentTotal > 0 ? 100 : 0);
+            const isUp = change > 0;
+            const isFlat = Math.abs(change) < 0.01;
+            const changeClass = isFlat ? 'comparison-flat' : (isUp ? 'comparison-up' : 'comparison-down');
+            const changeSymbol = isFlat ? '➖' : (isUp ? '▲' : '▼');
+            const changeText = isFlat ? 'Flat' : `${Math.abs(change).toFixed(1)}%`;
             
             html += `
                 <div class="store-card">
-                    <div class="store-card-name">${storeName}</div>
-                    <div class="store-card-sales">${formatMYR(totalSales)}</div>
-                    <div class="store-card-txns">${formatNumber(txnCount)} transactions</div>
+                    <div class="store-card-name">${store.name}</div>
+                    <div class="store-card-sales">${formatMYR(store.currentTotal)}</div>
+                    <div class="store-card-txns">${formatNumber(store.currentTxns)} transactions</div>
+                    <div class="card-compare">
+                        <span class="comparison-badge ${changeClass}">${changeSymbol} ${changeText} vs previous</span>
+                        <span style="font-size:0.65rem; color:#6c86a3; margin-left:4px;">(prev: ${formatMYR(store.prevTotal)})</span>
+                    </div>
                 </div>
+            `;
+        });
+        
+        grid.innerHTML = html;
+        
+        // Update the total in the title with comparison AND previous total
+        if (totalEl) {
+            const totalChange = prevTotalAllStores > 0 ? ((totalAllStores - prevTotalAllStores) / prevTotalAllStores * 100) : 
+                                (totalAllStores > 0 ? 100 : 0);
+            const totalIsUp = totalChange > 0;
+            const totalIsFlat = Math.abs(totalChange) < 0.01;
+            const totalChangeClass = totalIsFlat ? 'flat' : (totalIsUp ? 'up' : 'down');
+            const totalChangeSymbol = totalIsFlat ? '➖' : (totalIsUp ? '▲' : '▼');
+            const totalChangeText = totalIsFlat ? 'Flat' : `${Math.abs(totalChange).toFixed(1)}%`;
+            
+            // Show previous total in the title
+            const prevTotalDisplay = prevTotalAllStores > 0 ? `(prev: ${formatMYR(prevTotalAllStores)})` : '';
+            
+            totalEl.innerHTML = `
+                📊 TOTAL: <strong>${formatMYR(totalAllStores)}</strong>
+                <span style="font-size:0.65rem; font-weight:400; color:#6c86a3;">(${formatNumber(totalTxnsAll)} txns)</span>
+                <span class="compare-badge ${totalChangeClass}">${totalChangeSymbol} ${totalChangeText}</span>
+                <span class="prev-total">${prevTotalDisplay}</span>
             `;
         }
         
-        html += `
-            <div class="store-card" style="background: #eef2ff; border-color: #2b6e9e;">
-                <div class="store-card-name">📊 TOTAL ALL STORES</div>
-                <div class="store-card-sales" style="color: #b85c1a;">${formatMYR(totalAllStores)}</div>
-                <div class="store-card-txns">${formatNumber(totalTxnsAll)} transactions</div>
-            </div>
-        `;
-        
-        grid.innerHTML = html;
     } catch (err) {
         console.error('renderStoreBreakdown error:', err);
         grid.innerHTML = '<div style="color: #b91c1c; padding: 12px;">Error loading store data</div>';
@@ -2116,7 +2289,6 @@ async function downloadFullProductList() {
 document.addEventListener('DOMContentLoaded', async function() {
     const todayNow = new Date();
     
-    // Set default store to "All Stores"
     currentStore = "all";
     currentStoreDisplay = "All Stores";
     document.getElementById('storeNameLabel').innerText = "All Stores";
