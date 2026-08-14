@@ -604,7 +604,7 @@
 </div>
 
 <!-- Store Modal -->
-<div id="storeModal" class="modal-overlay"><div class="modal-bottom"><div class="modal-title">🏬 Select Store</div><div class="store-option" data-store="all" data-name="All Stores">🏢 All Stores (Combined)</div><div class="store-option" data-store="queens" data-name="Queensbay Mall">Queensbay Mall</div><div class="store-option" data-store="sunshine" data-name="Sunshine Central">Sunshine Central</div><div class="store-option" data-store="gurney_paragon" data-name="Gurney Paragon">Gurney Paragon</div><button class="close-modal" id="closeStoreModal">Cancel</button></div></div>
+<div id="storeModal" class="modal-overlay"><div class="modal-bottom"><div class="modal-title">🏬 Select Store</div><div class="store-option" data-store="all" data-name="All Stores">🏢 All Stores (Combined)</div><div class="store-option" data-store="queens" data-name="Queens">Queens</div><div class="store-option" data-store="sunshine" data-name="Sunshine Central">Sunshine Central</div><div class="store-option" data-store="gurney_paragon" data-name="Gurney Paragon">Gurney Paragon</div><button class="close-modal" id="closeStoreModal">Cancel</button></div></div>
 
 <!-- Date Modal -->
 <div id="dateModal" class="modal-overlay"><div class="modal-bottom"><div class="modal-title">📅 Select Range</div><div class="preset-option" data-preset="today">Today</div><div class="preset-option" data-preset="week">This Week</div><div class="preset-option" data-preset="month">This Month</div><div class="preset-option" data-preset="lastmonth">Last Month</div><div class="preset-option" data-preset="year">This Year</div><div class="preset-option" data-preset="lastyear">Last Year</div><div class="divider"></div><div class="preset-option" data-preset="custom">📆 Custom</div><div id="customDateRange" style="display: none;"><div class="date-range-custom"><input type="date" id="customFromDate"><input type="date" id="customToDate"><button class="apply-custom" id="applyCustomBtn">Apply</button></div></div><button class="close-modal" id="closeDateModal">Close</button></div></div>
@@ -633,7 +633,7 @@
         </div>
         <div id="irsStoreSelectorPanel" class="store-selector-panel">
             <div data-irs-store="all" class="irs-store-item selected">🏢 All Stores</div>
-            <div data-irs-store="queens" class="irs-store-item">🏬 Queensbay Mall</div>
+            <div data-irs-store="queens" class="irs-store-item">🏬 Queens</div>
             <div data-irs-store="sunshine" class="irs-store-item">☀️ Sunshine Central</div>
             <div data-irs-store="gurney_paragon" class="irs-store-item">🏛️ Gurney Paragon</div>
         </div>
@@ -679,14 +679,14 @@ let irsFromDate = "", irsToDate = "";
 
 // Store names mapping
 const STORE_NAMES = {
-    'queens': '🏬 Queensbay Mall',
+    'queens': '🏬 Queens',
     'sunshine': '☀️ Sunshine Central',
     'gurney_paragon': '🏛️ Gurney Paragon'
 };
 
 // Store key mapping for selection
 const STORE_KEY_MAP = {
-    '🏬 Queensbay Mall': 'queens',
+    '🏬 Queens': 'queens',
     '☀️ Sunshine Central': 'sunshine',
     '🏛️ Gurney Paragon': 'gurney_paragon'
 };
@@ -694,7 +694,7 @@ const STORE_KEY_MAP = {
 // Store display names for badge
 const STORE_BADGE_NAMES = {
     'all': '🏢 All Stores',
-    'queens': '🏬 Queensbay',
+    'queens': '🏬 Queens',
     'sunshine': '☀️ Sunshine',
     'gurney_paragon': '🏛️ Gurney'
 };
@@ -2636,7 +2636,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             const storeVal = this.getAttribute('data-irs-store');
             const storeNameMap = { 
                 all: 'All Stores', 
-                queens: 'Queensbay Mall', 
+                queens: 'Queens', 
                 sunshine: 'Sunshine Central', 
                 gurney_paragon: 'Gurney Paragon' 
             };
