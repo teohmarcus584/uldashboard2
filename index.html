@@ -13,6 +13,55 @@
         .dashboard-container { width: 100%; padding: 0 20px; }
         @media (min-width: 1400px) { .dashboard-container { padding: 0 40px; } }
         
+        /* Pull to refresh */
+        .pull-to-refresh {
+            position: relative;
+            overflow: hidden;
+            padding-top: 0;
+            transition: padding-top 0.3s ease;
+        }
+        .pull-to-refresh .pull-indicator {
+            position: absolute;
+            top: -60px;
+            left: 0;
+            right: 0;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            color: #6c86a3;
+            background: transparent;
+            transition: top 0.3s ease;
+        }
+        .pull-to-refresh.pulling .pull-indicator {
+            top: 0;
+        }
+        .pull-to-refresh.refreshing .pull-indicator {
+            top: 0;
+        }
+        .pull-to-refresh .pull-indicator .spinner {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #eef2f8;
+            border-top: 3px solid #2b6e9e;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 12px;
+        }
+        .pull-to-refresh.refreshing .pull-indicator .spinner {
+            display: block;
+        }
+        .pull-to-refresh .pull-indicator .icon {
+            font-size: 1.5rem;
+            margin-right: 8px;
+            transition: transform 0.3s ease;
+        }
+        .pull-to-refresh.pulling .pull-indicator .icon {
+            transform: rotate(180deg);
+        }
+        
         .app-header {
             background: white; padding: 12px 20px; border-bottom: 1px solid #eef2f8;
             display: grid;
@@ -103,7 +152,16 @@
         .toggle-btn.active { background: #1e4668; color: white; }
         .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 28px; }
         .kpi-card { background: white; border-radius: 32px; padding: 20px 16px; border: 1px solid #eef2f8; }
-        .kpi-label { font-size: 0.9rem; font-weight: 700; color: #4a627a; }
+        .kpi-label { font-size: 0.9rem; font-weight: 700; color: #4a627a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+        .kpi-label .store-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            background: #eef2ff;
+            padding: 2px 12px;
+            border-radius: 40px;
+            color: #2b6e9e;
+            white-space: nowrap;
+        }
         .kpi-value { font-size: 2.4rem; font-weight: 800; color: #1a2c42; margin-top: 12px; }
         .payment-breakdown { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
         .payment-item { flex: 1; text-align: center; background: #f9fbfd; border-radius: 28px; padding: 14px 8px; }
@@ -320,6 +378,16 @@
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .store-breakdown-title .title-total:hover {
+            background: #dbe4f0;
+            border-color: #1a3a5a;
+            transform: scale(1.02);
+        }
+        .store-breakdown-title .title-total:active {
+            transform: scale(0.97);
         }
         .store-breakdown-title .title-total strong {
             color: #b85c1a;
@@ -347,6 +415,12 @@
             font-size: 0.65rem;
             font-weight: 400;
             color: #6c86a3;
+        }
+        .store-breakdown-title .title-total .click-hint-total {
+            font-size: 0.6rem;
+            color: #6c86a3;
+            opacity: 0.6;
+            margin-left: 4px;
         }
         .store-breakdown-sub {
             font-size: 0.8rem;
@@ -385,19 +459,6 @@
             margin-top: 6px;
             text-align: center;
         }
-        .store-card-total {
-            background: #eef2ff;
-            border-color: #2b6e9e;
-            border-width: 2px;
-            cursor: default;
-        }
-        .store-card-total:hover {
-            transform: none !important;
-            box-shadow: none !important;
-        }
-        .store-card-total .store-card-sales {
-            color: #b85c1a;
-        }
     </style>
 </head>
 <body>
@@ -417,7 +478,12 @@
         <span>▼</span>
     </button>
 </div>
-<div class="dashboard-container">
+<div class="dashboard-container pull-to-refresh" id="pullToRefresh">
+    <div class="pull-indicator" id="pullIndicator">
+        <span class="spinner"></span>
+        <span class="icon">⬇</span>
+        <span class="text" id="pullText">Pull down to refresh</span>
+    </div>
     <div id="errorMsg" class="error-toast"></div>
     <div id="successMsg" class="success-toast"></div>
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
@@ -441,10 +507,11 @@
     <div class="store-breakdown" id="storeBreakdown">
         <div class="store-breakdown-title">
             <span class="title-left">🏪 Store Sales Breakdown</span>
-            <span class="title-total" id="storeBreakdownTotal">
+            <span class="title-total" id="storeBreakdownTotal" title="Click to view All Stores">
                 📊 TOTAL: <strong>RM 0.00</strong>
                 <span class="compare-badge">—</span>
                 <span class="prev-total"></span>
+                <span class="click-hint-total">↩️ All Stores</span>
             </span>
         </div>
         <div class="store-breakdown-sub">Click any store card to filter by that store</div>
@@ -454,7 +521,13 @@
     </div>
 
     <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">TOTAL SALES (RM)</div><div class="kpi-value" id="totalSales"><div class="skeleton kpi-skeleton"></div></div></div>
+        <div class="kpi-card">
+            <div class="kpi-label">
+                TOTAL SALES (RM)
+                <span class="store-badge" id="storeBadge">🏢 All Stores</span>
+            </div>
+            <div class="kpi-value" id="totalSales"><div class="skeleton kpi-skeleton"></div></div>
+        </div>
         <div class="kpi-card"><div class="kpi-label">TRANSACTIONS</div><div class="kpi-value" id="txnCount"><div class="skeleton kpi-skeleton"></div></div></div>
         <div class="kpi-card"><div class="kpi-label">ITEMS SOLD</div><div class="kpi-value" id="itemsSold"><div class="skeleton kpi-skeleton"></div></div></div>
         <div class="kpi-card"><div class="kpi-label">AVG. TICKET</div><div class="kpi-value" id="avgTicket"><div class="skeleton kpi-skeleton"></div></div></div>
@@ -618,6 +691,14 @@ const STORE_KEY_MAP = {
     '🏛️ Gurney Paragon': 'gurney_paragon'
 };
 
+// Store display names for badge
+const STORE_BADGE_NAMES = {
+    'all': '🏢 All Stores',
+    'queens': '🏬 Queensbay',
+    'sunshine': '☀️ Sunshine',
+    'gurney_paragon': '🏛️ Gurney'
+};
+
 // ----- Helper functions -----
 function getTodayYMD() {
     const d = new Date();
@@ -638,6 +719,34 @@ function formatYMD(date) {
 function parseYMD(ymd) {
     const [year, month, day] = ymd.split('-').map(Number);
     return new Date(year, month - 1, day);
+}
+
+// Populate the employee selector used by the IRS receipt report.
+// This was previously called but never defined, which stopped dashboard loading.
+async function populateEmployeeDropdowns() {
+    const select = document.getElementById('irsEmployeeSelect');
+    if (!select) return;
+
+    if (allEmployeesList.length === 0) {
+        allEmployeesList = await fetchEmployees();
+    }
+
+    const selectedId = String(select.value || 'all');
+    const employees = allEmployeesList
+        .filter(employee => employee && employee.id != null && employee.name)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    select.replaceChildren();
+    const allOption = new Option('👥 All Employees', 'all');
+    select.add(allOption);
+
+    employees.forEach(employee => {
+        select.add(new Option(employee.name, String(employee.id)));
+    });
+
+    select.value = Array.from(select.options).some(option => option.value === selectedId)
+        ? selectedId
+        : 'all';
 }
 
 function getWeekStart(d) { 
@@ -1093,40 +1202,22 @@ function renderChartWithViewMode(chartData) {
     }
 }
 
-// ----- Get previous period for comparison (same day last month) -----
+// ----- Get previous period for comparison (matching dates in the previous month) -----
 function getPreviousPeriod(from, to) {
     const fromDate = new Date(from + 'T00:00:00+08:00');
     const toDate = new Date(to + 'T23:59:59+08:00');
     
-    // For day/week/month views, compare with same day last month
+    // For day/week/month views, compare the identical day range last month.
+    // Example: Aug 1–14 is compared with Jul 1–14.
     if (currentPresetType === 'day' || currentPresetType === 'week' || currentPresetType === 'month') {
-        const today = new Date();
-        const currentMonth = fromDate.getMonth();
-        const currentYear = fromDate.getFullYear();
-        const currentDay = fromDate.getDate();
-        
-        // Previous month, same day
-        const prevMonthDate = new Date(currentYear, currentMonth - 1, currentDay);
-        
-        // Check if we need to adjust for months with fewer days
-        const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
-        const adjustedDay = Math.min(currentDay, lastDayOfPrevMonth);
-        const prevFrom = new Date(currentYear, currentMonth - 1, adjustedDay);
-        
-        // Calculate the duration of the current period
-        const durationDays = Math.floor((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
-        
-        // For week: we want the same week last month
-        let prevTo;
-        if (currentPresetType === 'week') {
-            // Same week range but shifted by a month
-            prevTo = new Date(prevFrom);
-            prevTo.setDate(prevFrom.getDate() + durationDays - 1);
-        } else {
-            // For day and month, same day last month
-            prevTo = new Date(prevFrom);
-            prevTo.setDate(prevFrom.getDate());
-        }
+        const shiftToPreviousMonth = (date) => {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const lastDayOfPreviousMonth = new Date(year, month, 0).getDate();
+            return new Date(year, month - 1, Math.min(date.getDate(), lastDayOfPreviousMonth));
+        };
+        const prevFrom = shiftToPreviousMonth(fromDate);
+        const prevTo = shiftToPreviousMonth(toDate);
         
         return {
             from: formatYMD(prevFrom),
@@ -1164,6 +1255,21 @@ async function renderStoreBreakdown(from, to) {
     }
     
     container.classList.add('visible');
+    
+    // Add click handler to the total badge to reset to All Stores
+    if (totalEl) {
+        totalEl.style.cursor = 'pointer';
+        totalEl.title = 'Click to view All Stores';
+        totalEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (currentStore !== 'all') {
+                selectStore('all', 'All Stores');
+            } else {
+                showSuccess('Already viewing All Stores');
+                setTimeout(() => { document.getElementById('successMsg').style.display = 'none'; }, 2000);
+            }
+        });
+    }
     
     try {
         const stores = ['queens', 'sunshine', 'gurney_paragon'];
@@ -1222,8 +1328,8 @@ async function renderStoreBreakdown(from, to) {
                     <div class="store-card-sales">${formatMYR(store.currentTotal)}</div>
                     <div class="store-card-txns">${formatNumber(store.currentTxns)} transactions</div>
                     <div class="card-compare">
-                        <span class="comparison-badge ${changeClass}">${changeSymbol} ${changeText} vs previous</span>
-                        <span style="font-size:0.65rem; color:#6c86a3; margin-left:4px;">(prev: ${formatMYR(store.prevTotal)})</span>
+                        <span class="comparison-badge ${changeClass}">${changeSymbol} ${changeText} vs last month</span>
+                        <span style="font-size:0.65rem; color:#6c86a3; margin-left:4px;">(last month: ${formatMYR(store.prevTotal)})</span>
                     </div>
                     <div class="click-hint">👆 Click to view this store</div>
                 </div>
@@ -1254,13 +1360,14 @@ async function renderStoreBreakdown(from, to) {
             const totalChangeText = totalIsFlat ? 'Flat' : `${Math.abs(totalChange).toFixed(1)}%`;
             
             // Show previous total in the title
-            const prevTotalDisplay = prevTotalAllStores > 0 ? `(prev: ${formatMYR(prevTotalAllStores)})` : '';
+            const prevTotalDisplay = prevTotalAllStores > 0 ? `(last month: ${formatMYR(prevTotalAllStores)})` : '';
             
             totalEl.innerHTML = `
                 📊 TOTAL: <strong>${formatMYR(totalAllStores)}</strong>
                 <span style="font-size:0.65rem; font-weight:400; color:#6c86a3;">(${formatNumber(totalTxnsAll)} txns)</span>
                 <span class="compare-badge ${totalChangeClass}">${totalChangeSymbol} ${totalChangeText}</span>
                 <span class="prev-total">${prevTotalDisplay}</span>
+                <span class="click-hint-total">↩️ All Stores</span>
             `;
         }
         
@@ -1287,6 +1394,13 @@ function updateUI(data, receipts) {
     document.getElementById('otherAmount').innerText = formatMYR(sales.otherTotal);
     const refundPos = (sales.refundTotal || 0) * -1;
     document.getElementById('refundAmount').innerText = formatMYR(refundPos > 0 ? refundPos : 0);
+    
+    // Update store badge
+    const storeBadge = document.getElementById('storeBadge');
+    if (storeBadge) {
+        const badgeText = STORE_BADGE_NAMES[currentStore] || '🏢 All Stores';
+        storeBadge.innerText = badgeText;
+    }
     
     const staffDiv = document.getElementById('staffSalesList');
     if (staffDiv) {
@@ -1493,7 +1607,9 @@ function renderMonthlyBreakdown(receipts) {
 }
 
 async function loadData(store, from, to, forceRefresh = false) {
-    if (refreshInProgress) return;
+    // A full dashboard refresh sets this flag before calling loadData.
+    // Allow that intentional forced request to continue.
+    if (refreshInProgress && !forceRefresh) return;
     refreshInProgress = true;
     
     const refreshBtn = document.getElementById('headerRefreshBtn');
@@ -1658,6 +1774,11 @@ function applyPreset(preset, customFrom, customTo) {
     if (preset === 'month') {
         let start = new Date(today.getFullYear(), today.getMonth(), 1);
         let end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        // "This Month" is month-to-date, so it compares fairly with the
+        // same dates in the previous month rather than a full future month.
+        if (formatYMD(start) <= TODAY_YMD && TODAY_YMD < formatYMD(end)) {
+            end = new Date(today);
+        }
         currentPresetType = 'month';
         currentFrom = formatYMD(start);
         currentTo = formatYMD(end);
@@ -1699,6 +1820,63 @@ function applyPreset(preset, customFrom, customTo) {
         updateArrowDisabledState();
         return;
     }
+}
+
+// ----- Date and store modal controls -----
+function openDateModal() {
+    const modal = document.getElementById('dateModal');
+    if (!modal) return;
+
+    const customRange = document.getElementById('customDateRange');
+    if (customRange) customRange.style.display = 'none';
+    modal.classList.add('active');
+}
+
+function closeDateModal() {
+    const modal = document.getElementById('dateModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function selectDatePreset(preset) {
+    if (preset === 'custom') {
+        const customRange = document.getElementById('customDateRange');
+        const fromInput = document.getElementById('customFromDate');
+        const toInput = document.getElementById('customToDate');
+        if (fromInput) fromInput.value = currentFrom || TODAY_YMD;
+        if (toInput) toInput.value = currentTo || TODAY_YMD;
+        if (customRange) customRange.style.display = 'block';
+        return;
+    }
+
+    applyPreset(preset);
+    closeDateModal();
+}
+
+function applyCustomRange() {
+    const from = document.getElementById('customFromDate')?.value;
+    const to = document.getElementById('customToDate')?.value;
+
+    if (!from || !to) {
+        showError('Please select both a start and end date.');
+        return;
+    }
+    if (from > to) {
+        showError('The start date must not be after the end date.');
+        return;
+    }
+
+    applyPreset('custom', from, to);
+    closeDateModal();
+}
+
+function openStoreModal() {
+    const modal = document.getElementById('storeModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeStoreModal() {
+    const modal = document.getElementById('storeModal');
+    if (modal) modal.classList.remove('active');
 }
 
 function updateDateLabel() {
@@ -1883,6 +2061,13 @@ function selectStore(storeKey, name) {
     currentStoreDisplay = name;
     document.getElementById('storeNameLabel').innerText = name;
     
+    // Update the store badge
+    const storeBadge = document.getElementById('storeBadge');
+    if (storeBadge) {
+        const badgeText = STORE_BADGE_NAMES[storeKey] || '🏢 All Stores';
+        storeBadge.innerText = badgeText;
+    }
+    
     productCategoryMap = {};
     
     loadProductCategoryMap(storeKey).then(map => {
@@ -1914,8 +2099,8 @@ async function refreshDashboard() {
         
         await loadData(currentStore, currentFrom, currentTo, true);
         
-        populateEmployeeDropdowns();
-        updateIrsTableTotal();
+        await populateEmployeeDropdowns();
+        await updateIrsTableTotal();
         
         showSuccess('✅ Data refreshed successfully!');
         setTimeout(() => { document.getElementById('successMsg').style.display = 'none'; }, 3000);
@@ -1928,53 +2113,64 @@ async function refreshDashboard() {
     }
 }
 
-function populateEmployeeDropdowns() {
-    const selects = [
-        document.getElementById('irsEmployeeSelect')
-    ];
-    
-    selects.forEach(select => {
-        if (!select) return;
-        const currentValue = select.value;
-        select.innerHTML = '<option value="all">👥 All Employees</option>';
-        allEmployeesList.forEach(emp => {
-            const opt = document.createElement('option');
-            opt.value = emp.id;
-            opt.textContent = emp.name;
-            select.appendChild(opt);
-        });
-        if (currentValue) select.value = currentValue;
-    });
-}
+// ==================== PULL TO REFRESH ====================
+let pullStartY = 0;
+let pullOffsetY = 0;
+let isPulling = false;
+const pullContainer = document.getElementById('pullToRefresh');
+const pullIndicator = document.getElementById('pullIndicator');
+const pullText = document.getElementById('pullText');
 
-function openStoreModal() { document.getElementById('storeModal').classList.add('active'); }
-function closeStoreModal() { document.getElementById('storeModal').classList.remove('active'); }
-function openDateModal() { 
-    document.getElementById('customDateRange').style.display = 'none'; 
-    document.getElementById('dateModal').classList.add('active'); 
-}
-function closeDateModal() { document.getElementById('dateModal').classList.remove('active'); }
+if (pullContainer) {
+    pullContainer.addEventListener('touchstart', function(e) {
+        if (window.scrollY === 0) {
+            pullStartY = e.touches[0].clientY;
+            isPulling = true;
+        }
+    }, { passive: true });
 
-function selectDatePreset(p) { 
-    if (p === 'custom') { 
-        document.getElementById('customDateRange').style.display = 'block'; 
-        return; 
-    } 
-    applyPreset(p); 
-    closeDateModal(); 
-}
+    pullContainer.addEventListener('touchmove', function(e) {
+        if (!isPulling || refreshInProgress) return;
+        const currentY = e.touches[0].clientY;
+        const diff = currentY - pullStartY;
+        
+        if (diff > 0 && window.scrollY === 0) {
+            pullOffsetY = Math.min(diff, 120);
+            if (pullOffsetY > 60) {
+                pullContainer.classList.add('pulling');
+                pullText.textContent = 'Release to refresh';
+            } else {
+                pullContainer.classList.remove('pulling');
+                pullText.textContent = 'Pull down to refresh';
+            }
+        }
+    }, { passive: true });
 
-function applyCustomRange() { 
-    const from = document.getElementById('customFromDate'); 
-    const to = document.getElementById('customToDate'); 
-    if (!from || !to) { showError("Select both dates"); return; } 
-    const fromVal = from.value;
-    const toVal = to.value;
-    if (!fromVal || !toVal) { showError("Select both dates"); return; } 
-    if (fromVal > toVal) { showError("Invalid range"); return; } 
-    if (isFutureDate(fromVal)) { showError("Cannot select future start date."); return; } 
-    applyPreset('custom', fromVal, toVal); 
-    closeDateModal(); 
+    pullContainer.addEventListener('touchend', function(e) {
+        if (!isPulling) return;
+        isPulling = false;
+        
+        if (pullOffsetY > 60 && !refreshInProgress) {
+            // Trigger refresh
+            pullContainer.classList.add('refreshing');
+            pullText.textContent = 'Refreshing...';
+            pullContainer.classList.remove('pulling');
+            
+            refreshDashboard().then(() => {
+                pullContainer.classList.remove('refreshing');
+                pullText.textContent = 'Pull down to refresh';
+                pullOffsetY = 0;
+            }).catch(() => {
+                pullContainer.classList.remove('refreshing');
+                pullText.textContent = 'Pull down to refresh';
+                pullOffsetY = 0;
+            });
+        } else {
+            pullContainer.classList.remove('pulling');
+            pullText.textContent = 'Pull down to refresh';
+            pullOffsetY = 0;
+        }
+    }, { passive: true });
 }
 
 // ==================== IRS FUNCTIONS ====================
@@ -2345,6 +2541,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     currentStore = "all";
     currentStoreDisplay = "All Stores";
     document.getElementById('storeNameLabel').innerText = "All Stores";
+    
+    // Update store badge
+    const storeBadge = document.getElementById('storeBadge');
+    if (storeBadge) {
+        storeBadge.innerText = '🏢 All Stores';
+    }
     
     currentPresetType = 'day';
     currentDayDate = new Date(todayNow);
