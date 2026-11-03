@@ -625,8 +625,30 @@ let currentIrsStoreName = "All Stores";
 let currentIrsPreset = "year";
 let irsFromDate = "", irsToDate = "";
 
-// Store display mapping
 const STORE_BADGE_NAMES = { 'all': '🏢 All Stores' };
+
+// ==================== ✅ CORE HELPERS — THE FIX ====================
+
+// ✅ The critical fix — determines who is credited for a sale
+function getCreditName(r) {
+    const sp  = (r.sales_person_name || '').trim();
+    const emp = (r.employee_name || '').trim();
+    const isBad = v => !v || v.toLowerCase() === 'unknown' || v === 'N/A' || v === '—';
+    if (!isBad(sp))  return sp;
+    if (!isBad(emp)) return emp;
+    return 'Unassigned';
+}
+
+// ✅ Filter out refunds AND refunded originals
+function getCleanSales(receipts) {
+    if (!Array.isArray(receipts)) return [];
+    return receipts.filter(r => {
+        const total = parseFloat(r.total) || 0;
+        if (total < 0) return false;
+        if (r.refunded === true) return false;
+        return true;
+    });
+}
 
 // ==================== FETCH STORES ====================
 async function fetchStores(forceRefresh = false) {
@@ -699,7 +721,6 @@ function getStoreDisplay(storeId) {
     return storeId;
 }
 
-// ==================== POPULATE STORE MODAL ====================
 function populateStoreModal() {
     const container = document.getElementById('storeListContainer');
     if (!container) return;
@@ -784,34 +805,18 @@ function getWeekStart(d) {
     return nd; 
 }
 
-// ==================== FETCH FUNCTIONS WITH PAGINATION ====================
-/**
- * Fetch all records from a table with automatic pagination to overcome the 1000-row limit
- * @param {string} table - The table name
- * @param {Function} queryBuilder - Function that takes (supabase, page, limit) and returns a query
- * @param {number} pageSize - Number of records per page (max 1000)
- * @param {Function} progressCallback - Called with {loaded, total, percentage}
- * @returns {Promise<Array>} - All records
- */
+// ==================== FETCH WITH PAGINATION ====================
 async function fetchAllPaginated(table, queryBuilder, pageSize = 1000, progressCallback = null) {
     let allData = [];
     let page = 0;
     let hasMore = true;
     let totalCount = null;
     
-    // First, get the total count
     try {
         const countQuery = supabaseClient.from(table).select('*', { count: 'exact', head: true });
-        // Apply any filters from the query builder
-        const tempQuery = queryBuilder(supabaseClient, 0, 1);
-        // Extract the filters from the temp query by rebuilding
-        // This is a bit of a hack - we need to get the filters applied
         const { count, error: countError } = await countQuery;
-        if (!countError && count !== null) {
-            totalCount = count;
-        }
+        if (!countError && count !== null) totalCount = count;
     } catch (e) {
-        // If we can't get the count, we'll just keep fetching until we get less than pageSize
         console.warn('Could not get total count, will fetch until empty:', e);
     }
     
@@ -819,7 +824,6 @@ async function fetchAllPaginated(table, queryBuilder, pageSize = 1000, progressC
         const from = page * pageSize;
         const to = from + pageSize - 1;
         
-        // Build the query with pagination
         let query = queryBuilder(supabaseClient, page, pageSize);
         query = query.range(from, to);
         
@@ -830,15 +834,11 @@ async function fetchAllPaginated(table, queryBuilder, pageSize = 1000, progressC
             break;
         }
         
-        if (!data || data.length === 0) {
-            hasMore = false;
-            break;
-        }
+        if (!data || data.length === 0) { hasMore = false; break; }
         
         allData = allData.concat(data);
         page++;
         
-        // Update progress
         if (progressCallback) {
             const loaded = allData.length;
             const total = totalCount || (page * pageSize);
@@ -846,31 +846,16 @@ async function fetchAllPaginated(table, queryBuilder, pageSize = 1000, progressC
             progressCallback({ loaded, total, percentage, page });
         }
         
-        // If we got less than pageSize, we've reached the end
-        if (data.length < pageSize) {
-            hasMore = false;
-        }
-        
-        // Safety limit - don't fetch more than 100,000 records
-        if (allData.length > 100000) {
-            console.warn('Safety limit reached: fetched 100,000 records');
-            hasMore = false;
-        }
+        if (data.length < pageSize) hasMore = false;
+        if (allData.length > 100000) { console.warn('Safety limit reached'); hasMore = false; }
     }
     
     return allData;
 }
 
-/**
- * Fetch receipts with automatic pagination for year views
- */
 async function fetchReceipts(store, from, to, isYearly = false) {
     try {
-        // For year views, use pagination to get all data
         if (isYearly && (currentPresetType === 'year' || currentPresetType === 'lastyear')) {
-            console.log(`📊 Fetching all receipts for year view (${from} to ${to}) with pagination...`);
-            
-            // Show progress indicator
             const progressContainer = document.getElementById('fetchProgressContainer');
             const progressBar = document.getElementById('fetchProgressBar');
             const progressText = document.getElementById('fetchProgressText');
@@ -894,20 +879,15 @@ async function fetchReceipts(store, from, to, isYearly = false) {
                 1000,
                 (progress) => {
                     if (progressBar) progressBar.style.width = progress.percentage + '%';
-                    if (progressText) {
-                        progressText.textContent = `Loading ${progress.loaded.toLocaleString()} receipts (${progress.percentage}%)...`;
-                    }
+                    if (progressText) progressText.textContent = `Loading ${progress.loaded.toLocaleString()} receipts (${progress.percentage}%)...`;
                 }
             );
             
             if (progressContainer) progressContainer.style.display = 'none';
             if (progressBar) progressBar.style.width = '0%';
-            
-            console.log(`✅ Loaded ${allData.length} receipts for year view`);
             return allData;
         }
         
-        // For non-year views, use the original single query (usually small enough)
         let query = supabaseClient.from('transactions').select('*').order('timestamp', { ascending: false });
         if (store && store !== 'all') query = query.eq('store', store);
         if (from) {
@@ -929,11 +909,10 @@ async function fetchReceipts(store, from, to, isYearly = false) {
 
 async function fetchStoreReceipts(store, from, to) {
     try {
-        // For store breakdown, use pagination if it might be a large range
         const isLargeRange = currentPresetType === 'year' || currentPresetType === 'lastyear' || currentPresetType === 'month';
         
         if (isLargeRange) {
-            const allData = await fetchAllPaginated(
+            return await fetchAllPaginated(
                 'transactions',
                 (client, page, limit) => {
                     let query = client.from('transactions').select('*').order('timestamp', { ascending: false });
@@ -950,10 +929,8 @@ async function fetchStoreReceipts(store, from, to) {
                 },
                 1000
             );
-            return allData;
         }
         
-        // For smaller ranges, use single query
         let query = supabaseClient.from('transactions').select('*').order('timestamp', { ascending: false });
         if (store && store !== 'all') query = query.eq('store', store);
         if (from) {
@@ -975,7 +952,6 @@ async function fetchStoreReceipts(store, from, to) {
 
 async function fetchIrsTableTotal(from, to) {
     try {
-        // Use pagination for IRS totals as well
         const allData = await fetchAllPaginated(
             'irs_reporting',
             (client, page, limit) => {
@@ -1004,8 +980,7 @@ async function fetchIrsTableTotal(from, to) {
 
 async function fetchIrsReceipts(store, from, to) {
     try {
-        // Use pagination for IRS receipts
-        const allData = await fetchAllPaginated(
+        return await fetchAllPaginated(
             'irs_reporting',
             (client, page, limit) => {
                 let query = client.from('irs_reporting').select('*').order('timestamp', { ascending: false });
@@ -1022,7 +997,6 @@ async function fetchIrsReceipts(store, from, to) {
             },
             1000
         );
-        return allData;
     } catch (err) {
         console.error('fetchIrsReceipts error:', err);
         return [];
@@ -1053,20 +1027,20 @@ async function loadProductCategoryMap(store) {
     }
 }
 
-// ==================== BUILD PRODUCT BREAKDOWN ====================
+// ==================== ✅ BUILD PRODUCT BREAKDOWN — FIXED ====================
 function buildProductBreakdownFromReceipts(receipts, categoryMap) {
     const productMap = new Map();
     let totalSalesFromProducts = 0, freeItemCount = 0, paidItemCount = 0, totalFreeItemValue = 0;
     
-    receipts.forEach(receipt => {
+    // ✅ Use clean sales only (excludes refunds AND refunded originals)
+    const clean = getCleanSales(receipts);
+    
+    clean.forEach(receipt => {
         let items = receipt.items || [];
         if (typeof items === 'string') {
             try { items = JSON.parse(items); } catch(e) { items = []; }
         }
         if (!Array.isArray(items)) items = [];
-        
-        const receiptTotal = parseFloat(receipt.total) || 0;
-        if (receiptTotal < 0) return;
         
         items.forEach(item => {
             const id = String(item.id || item.product_id || 'unknown');
@@ -1180,7 +1154,7 @@ function renderChartWithData(chartData) {
     
     if (chartData && chartData.salesByDay) {
         if (isHourly && currentPresetType === 'day') {
-            const hourlyData = buildHourlyChartData(rawReceiptsData, currentFrom, currentTo);
+            const hourlyData = buildHourlyChartData(getCleanSales(rawReceiptsData), currentFrom, currentTo);
             labels = hourlyData.labels;
             vals = hourlyData.data;
         } else {
@@ -1245,10 +1219,13 @@ async function renderStoreBreakdown(from, to) {
         let totalAllStores = 0, totalTxnsAll = 0, prevTotalAllStores = 0;
         
         for (const storeKey of stores) {
-            const [currentReceipts, prevReceipts] = await Promise.all([
+            const [currentRaw, prevRaw] = await Promise.all([
                 fetchStoreReceipts(storeKey, from, to),
                 fetchStoreReceipts(storeKey, prevPeriod.from, prevPeriod.to)
             ]);
+            // ✅ Use clean sales
+            const currentReceipts = getCleanSales(currentRaw);
+            const prevReceipts = getCleanSales(prevRaw);
             const currentTotal = currentReceipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
             const currentTxns = currentReceipts.length;
             const prevTotal = prevReceipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
@@ -1323,8 +1300,10 @@ function renderMonthlyBreakdown(receipts) {
     }
     monthlyBreakdown.classList.add('visible');
     
+    // ✅ Use clean sales only
+    const clean = getCleanSales(receipts);
     const monthlyTotals = {}, monthlyTxns = {};
-    receipts.forEach(rec => {
+    clean.forEach(rec => {
         if (!rec.timestamp) return;
         const date = new Date(rec.timestamp);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
@@ -1358,6 +1337,7 @@ function renderMonthlyBreakdown(receipts) {
     monthlyGrid.innerHTML = html;
 }
 
+// ==================== ✅ UPDATE UI — FIXED ====================
 function updateUI(data, receipts) {
     if (!data) return;
     const { sales, chart, employees } = data;
@@ -1395,14 +1375,20 @@ function updateUI(data, receipts) {
         storeBadge.innerText = STORE_BADGE_NAMES[currentStore] || '🏢 All Stores';
     }
     
+    // ✅ Staff table — sorted high to low, with total row
     if (staffDiv) {
         if (!employees.labels || !employees.labels.length) {
             staffDiv.innerHTML = '<div>No staff sales data</div>';
         } else {
+            const sortedEmp = employees.labels
+                .map((name, i) => ({ name, sales: employees.data[i] }))
+                .sort((a, b) => b.sales - a.sales);
             let h = '<table class="mini-table"><thead><tr><th>Staff</th><th>Sales (RM)</th></tr></thead><tbody>';
-            for (let i = 0; i < employees.labels.length; i++) {
-                h += `<tr><td><strong>${escapeHtml(employees.labels[i])}</strong></td><td>${formatMYR(employees.data[i])}</td></tr>`;
+            for (const e of sortedEmp) {
+                h += `<tr><td><strong>${escapeHtml(e.name)}</strong></td><td>${formatMYR(e.sales)}</td></tr>`;
             }
+            const empGrandTotal = sortedEmp.reduce((s, e) => s + e.sales, 0);
+            h += `<tr class="total-row"><td><strong>TOTAL</strong></td><td><strong>${formatMYR(empGrandTotal)}</strong></td></tr>`;
             h += '</tbody></table>';
             staffDiv.innerHTML = h;
         }
@@ -1521,7 +1507,7 @@ function updateUI(data, receipts) {
 function renderChartWithViewMode(chartData) {
     const viewMode = document.getElementById('viewModeSelect')?.value || 'daily';
     if (viewMode === 'hourly' && currentPresetType === 'day') {
-        const hourlyData = buildHourlyChartData(rawReceiptsData, currentFrom, currentTo);
+        const hourlyData = buildHourlyChartData(getCleanSales(rawReceiptsData), currentFrom, currentTo);
         renderChartWithData({ salesByDay: { labels: hourlyData.labels, data: hourlyData.data } });
     } else {
         renderChartWithData(chartData);
@@ -1544,7 +1530,7 @@ async function populateEmployeeDropdowns() {
     select.value = Array.from(select.options).some(o => o.value === selectedId) ? selectedId : 'all';
 }
 
-// ==================== LOAD DATA ====================
+// ==================== ✅ LOAD DATA — FIXED ====================
 async function loadData(store, from, to, forceRefresh = false) {
     if (refreshInProgress && !forceRefresh) return;
     refreshInProgress = true;
@@ -1567,34 +1553,40 @@ async function loadData(store, from, to, forceRefresh = false) {
         
         rawReceiptsData = receipts;
         
+        // ✅ Clean sales — exclude refunds AND refunded originals
+        const salesReceipts = getCleanSales(receipts);
+        
+        // ✅ KPIs from clean sales
         const salesData = {
-            totalSales: receipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
-            transactionCount: receipts.length,
-            totalItems: receipts.reduce((sum, r) => {
+            totalSales: salesReceipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
+            transactionCount: salesReceipts.length,
+            totalItems: salesReceipts.reduce((sum, r) => {
                 let items = r.items || [];
                 if (typeof items === 'string') { try { items = JSON.parse(items); } catch(e) { items = []; } }
                 if (!Array.isArray(items)) items = [];
                 return sum + items.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0);
             }, 0),
-            cashTotal: receipts.filter(r => (r.payment_method || '').toLowerCase() === 'cash').reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
-            cardTotal: receipts.filter(r => ['card','credit_card'].includes((r.payment_method || '').toLowerCase())).reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
-            alipayTotal: receipts.filter(r => (r.payment_method || '').toLowerCase() === 'alipay').reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
-            otherTotal: receipts.filter(r => {
+            cashTotal: salesReceipts.filter(r => (r.payment_method || '').toLowerCase() === 'cash').reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
+            cardTotal: salesReceipts.filter(r => ['card','credit_card'].includes((r.payment_method || '').toLowerCase())).reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
+            alipayTotal: salesReceipts.filter(r => (r.payment_method || '').toLowerCase() === 'alipay').reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
+            otherTotal: salesReceipts.filter(r => {
                 const m = (r.payment_method || '').toLowerCase();
                 return m === 'tng' || m === 'other' || (m && !['cash','card','credit_card','alipay'].includes(m));
             }).reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
             refundTotal: receipts.filter(r => parseFloat(r.total) < 0).reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0)
         };
         
+        // ✅ Employee totals from clean sales only, using getCreditName
         const employeeSales = {};
-        receipts.forEach(r => {
-            const emp = r.sales_person_name || r.employee_name || 'Unknown';
+        salesReceipts.forEach(r => {
+            const emp = getCreditName(r);
             employeeSales[emp] = (employeeSales[emp] || 0) + (parseFloat(r.total) || 0);
         });
         const employeeData = { labels: Object.keys(employeeSales), data: Object.values(employeeSales) };
         
+        // ✅ Chart from clean sales only
         const dailySales = {};
-        receipts.forEach(r => {
+        salesReceipts.forEach(r => {
             if (r.timestamp) {
                 const date = r.timestamp.split('T')[0];
                 dailySales[date] = (dailySales[date] || 0) + (parseFloat(r.total) || 0);
@@ -1607,7 +1599,7 @@ async function loadData(store, from, to, forceRefresh = false) {
         
         isDataLoaded = true;
         
-        if (freshnessEl) { freshnessEl.className = 'data-freshness fresh'; freshnessEl.textContent = `✅ ${receipts.length} transactions loaded (${new Date().toLocaleTimeString()})`; }
+        if (freshnessEl) { freshnessEl.className = 'data-freshness fresh'; freshnessEl.textContent = `✅ ${salesReceipts.length} sales loaded (${new Date().toLocaleTimeString()})`; }
         if (badgeEl) badgeEl.className = 'badge-dot active';
         
         populateEmployeeDropdowns();
@@ -2041,7 +2033,6 @@ async function refreshDashboard() {
     }
 }
 
-// ==================== UPDATE IRS TABLE TOTAL ====================
 async function updateIrsTableTotal() {
     try {
         const total = await fetchIrsTableTotal(irsFromDate, irsToDate);
@@ -2185,10 +2176,11 @@ async function generateIrsReceiptPDF() {
     loadingDiv.innerText = `Generating IRS report...`;
     document.body.appendChild(loadingDiv);
     try {
-        const receipts = await fetchIrsReceipts(selectedStore, irsFromDate, irsToDate);
+        let receipts = await fetchIrsReceipts(selectedStore, irsFromDate, irsToDate);
         
+        // ✅ Employee filter uses getCreditName
         if (selectedEmployeeName) {
-            receipts.filter(r => r.employee_name === selectedEmployeeName || r.sales_person_name === selectedEmployeeName);
+            receipts = receipts.filter(r => getCreditName(r) === selectedEmployeeName);
         }
         if (receipts.length === 0) throw new Error("No IRS receipts found for the selected criteria.");
         receipts.sort((a,b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
